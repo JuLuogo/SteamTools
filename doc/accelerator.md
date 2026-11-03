@@ -323,3 +323,35 @@ GitHub 官配                 20.207.73.82      无 SNI / github.com   OK TLSv1.
 | 服务端中转 `ServerAccelerate` | ✅ 理论可行 | 需登录换令牌 + 服务端支持 |
 | 换 Cloudflare 优选 IP | ❌ | 阻断在 SNI，与 IP 无关 |
 | 接公共图片反代 | ⚠️ 存档 | 需先给客户端加 Host 改写能力 |
+
+### 9.7 历史上各种「免代理直连」手段，在当前网络下的复测（2026-11）
+
+结论先说：**不是方法过时了，而是这些方法共同的前提「目标 IP 可达」在部分站点上不成立了**。
+
+| 手段 | 原理 | GitHub | pixiv | 维基正文 | 维基图片 |
+| --- | --- | --- | --- | --- | --- |
+| hosts + 硬编码源站 IP + **不发 SNI**（Pixiv-Nginx 2017） | 绕 DNS + 绕 SNI | ✅ | ❌ 源站 IP 不可达、CF 拒无 SNI | ❌ IP 层阻断 | ✅ |
+| **优选 Cloudflare IP** + 真实 SNI | 换落地边缘 | — | ❌ 15/15 段全 RST | — | — |
+| **换 SNI + 保原 Host** | 绕 SNI 关键词 | ✅ | ❌ CF 按 SNI 路由 → 403 | ⚠️ 思路成立但 IP 层已阻断 | ✅ |
+| **DoH 纠偏 + 直连** | 绕 DNS 污染 | ✅ | ❌ | ❌ | ✅ |
+| **TLS 分片**（byedpi / zapret / SniShaper） | 让 DPI 拼不出 ClientHello | 未定论（本轮网络抖动） | 未定论 | 未定论 | 不需要 |
+| **ECH**（加密 SNI） | 隐藏 SNI | — | ❌ pixiv 未启用（HTTPS 记录为空） | ❌ | — |
+| **反代 / 代理 / 中转** | 换出口 | ✅ | ✅ | ✅ | ✅ |
+
+### 9.8 维基百科实测（TCP 通、TLS 分层被封）
+
+```text
+文本节点：TCP 全都通，但 TLS 8/8 超时（换任何 SNI 都一样）
+  208.80.154.224 / 208.80.153.224 / 103.102.166.224 / 198.35.26.96
+  → 真实 SNI=zh.wikipedia.org  TIMEOUT×8
+  → 伪装 SNI=example.com        TIMEOUT×8
+
+图片节点：TLS 8/8 成功，而且【真实 SNI 也能过】
+  208.80.154.240  SNI=upload.wikimedia.org → OK CN=upload.wikimedia.org（8/8）
+  208.80.154.240  SNI=example.com          → OK CN=upload.wikimedia.org（8/8）
+```
+
+→ 维基百科：**图片能加速，正文不能**（正文节点的 TLS 被按 IP 阻断，与 SNI 无关）。
+
+另一个观察：GitHub 官配 IP `20.207.73.82` 的 TCP 连接 3 次里会有 1 次超时，但 TLS 握手正常——
+所以官方列表给同一入口配多个 IP 是必要的，客户端应按 IP 轮询重试。
