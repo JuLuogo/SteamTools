@@ -161,15 +161,22 @@ partial class ProxyService
             "oauth.secure.pixiv.net";
 
         /// <summary>
-        /// 维基百科/维基媒体的常用域名。⚠️ 当前网络下文本节点 IP 层被阻断，只能靠反代。
-        /// <para>说明：hosts 模式无法写通配，因此这里枚举常用语种与共享资源域名；
-        /// 其它语种（如 fr/ru/es）可在 System/PAC 模式下由 <c>*.wikipedia.org</c> 规则覆盖。</para>
+        /// 维基百科正文。⚠️ 维基的文本节点默认不可达，必须指定实测可用的落地节点 + 中性 SNI。
+        /// <para>实测：185.15.58.224 稳定可用（3/4 成功）、195.200.68.224 备用（1/4）；
+        /// 185.15.59.224 与 103.102.166.x / 208.80.153-154.x 当前不通。</para>
+        /// <para>图片走 <c>upload.wikimedia.org</c> 单独一条（节点不同，该节点对它返回 421）。</para>
         /// </summary>
+        const string WikipediaIp = "185.15.58.224";
+
         const string WikipediaDomains =
             "wikipedia.org;www.wikipedia.org;zh.wikipedia.org;en.wikipedia.org;ja.wikipedia.org;" +
             "zh.m.wikipedia.org;en.m.wikipedia.org;" +
-            "wikimedia.org;commons.wikimedia.org;upload.wikimedia.org;meta.wikimedia.org;" +
-            "api.wikimedia.org;login.wikimedia.org;donate.wikimedia.org";
+            "wikimedia.org;commons.wikimedia.org;meta.wikimedia.org;" +
+            "api.wikimedia.org;login.wikimedia.org;donate.wikimedia.org;species.wikimedia.org";
+
+        /// <summary>维基共享资源图片节点（实测对任意 SNI 都返回真实内容）。</summary>
+        const string WikipediaImageIp = "208.80.154.240";
+        const string WikipediaImageDomains = "upload.wikimedia.org;maps.wikimedia.org";
 
         /// <summary>
         /// 需要合并进 <see cref="ProxyDomains"/> 的本地加速项目组（顺序即 UI 中的排序）。
@@ -196,7 +203,8 @@ partial class ProxyService
                 Item("Bloomberg", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910e", BloombergDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
                 Item("RFI 法国国际广播", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910f", RfiDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
                 Item("Pixiv 主站（需自建 Worker 反代）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", PixivDomains, ignoreSslCertVerification: true),
-                Item("维基百科（IP 层封锁，需反代）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9103", WikipediaDomains, ignoreSslCertVerification: true)),
+                Item("维基百科正文（指定节点）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9103", WikipediaDomains, WikipediaIp, NeutralSni, true),
+                Item("维基百科图片（指定节点）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9110", WikipediaImageDomains, WikipediaImageIp, NeutralSni, true)),
         };
     }
 }

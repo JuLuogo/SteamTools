@@ -1,5 +1,13 @@
 # 加速器（Accelerator）实现说明与域名清单
 
+> **TL;DR（2026-11 定稿）**
+>
+> 1. 加速原理 = hosts/驱动劫持 + 本地 TLS 中间人反代 + 直连（或镜像/中转）转发；**能解 DNS 污染和 SNI 关键词阻断，解不了目标 IP 的 TCP 层封锁**。
+> 2. 列表来自远端 `api.steampp.net`，本仓库新增「本地覆盖层」补充缺失域名与第三方站点。
+> 3. **已可用（实测）**：GitHub 全量、Steam 全量、维基百科正文与图片、Pixiv 图片、DuckDuckGo、Proton、Instagram、Facebook、Twitch、Docker、Dropbox、OneDrive、Amazon 日本、CNN、Bloomberg、RFI。
+> 4. **需要中转**：Pixiv 主站（CF 按 SNI 路由 + 源站拒外）、Google/YouTube/Telegram/BBC/archive.org（IP 全封）。
+> 5. TLS 分片在 2025–2026 已被可重组 TCP 的 DPI 破解，不要再指望。
+
 > 本文说明「社区加速」到底是怎么工作的、加速列表来自哪里、子域名是否完整，以及新增站点/子域名的正确做法。
 > 事实基线：`develop`，代码位置均为相对仓库根的路径。
 
@@ -493,3 +501,46 @@ bloomberg.com 301 | cnn.com 301
 | Google / YouTube / Twitch(部分) / Telegram / BBC / archive.org | TCP 层就封死 | 只能中转 |
 
 > 注：`twitch.tv` 在 A/B 测试里表现不一致（B 类 + Host 路由 301 可用），实际可用性取决于当期线路。
+
+---
+
+## 12. 定稿结论（2026-11，覆盖前文所有阶段结论）
+
+### 12.1 各站点最终状态
+
+| 站点 | 手段 | 状态 |
+| --- | --- | --- |
+| GitHub / raw.githubusercontent | 远端条目 + 本地补子域 | ✅ 可用 |
+| Steam 商店/社区/图片/CDN | 远端条目 + 镜像 | ✅ 可用 |
+| **Pixiv 图片** | 中性 SNI + DoH 解析 `i.pximg.net` | ✅ 可用（实测 200） |
+| **维基百科正文** | 指定节点 `185.15.58.224` + 中性 SNI | ✅ 可用（实测 200，3/4 成功率） |
+| **维基百科图片** | 指定节点 `208.80.154.240` | ✅ 可用 |
+| DuckDuckGo / Proton / Instagram / Facebook / Twitch / Docker / Dropbox / OneDrive / Amazon JP / CNN / Bloomberg / RFI | 中性 SNI + Host 路由（不写死 IP） | ✅ 可用 |
+| **Pixiv 主站** | 必须自建 Worker / 反代 | ❌ 纯客户端无解 |
+| Google / YouTube / Telegram / BBC / archive.org | IP 层全封 | ❌ 只能中转 |
+
+### 12.2 为什么 Pixiv 主站无解（三条路都堵死）
+
+1. 源站 `210.140.139.129–162` 全部对 `Host: www.pixiv.net` 返回 **403/421**（只服务 pximg 等 vhost）；
+2. Cloudflare 前置必须收到 `*.pixiv.net` 的 SNI，而含 `pixiv` 的 SNI **一律被 RST**（连不存在的 `foo.pixiv.net` 也是）；
+3. 不发 SNI / 换中性 SNI → CF 直接 `handshake_failure` 或 `403`；无 ECH。
+
+### 12.3 为什么维基正文能用（关键差异）
+
+- 维基不按 SNI 路由，而是按 **HTTP Host** 路由：中性 SNI + `Host: zh.wikipedia.org` 即可拿到完整页面；
+- 前提是**节点可达**：`185.15.58.224` 稳定、`195.200.68.224` 备用，其余文本节点当前不可达；
+- 这就是「指定节点」而不是「让 DoH 去解析」的原因。
+
+### 12.4 关于 TLS 分片（已证伪）
+
+受控实验（同一 ClientHello）：整包 / TCP 切 1 字节 / SNI 中点切 / 拆两个 TLS record + 120ms，
+对 pixiv、维基真 SNI **全部 ECONNRESET**；而 `example.com` 对照能拿到 ServerHello → 说明本线路 DPI 会重组 TCP。
+社区侧证：TlsFragment 已归档、zapret 作者声明「可能随时失效」、byedpi/zapret 无中国成功证据。
+→ **不要在客户端里实现分片**。
+
+### 12.5 维护须知
+
+- 硬编码的节点 IP（维基、以及曾经的 pixiv 图片）会随 CDN 调度变化：失效时更新常量即可；
+- 其余站点用「空 `ForwardDomainNames` + 中性 SNI」，由 DoH 解析真实 IP，**不受换 IP 影响**；
+- 官方远端列表仍然优先；本地覆盖层只补缺，不覆盖远端条目；
+- 勾选状态按 Guid 持久化，**改 Guid 等于让老用户重新勾选**。
