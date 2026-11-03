@@ -19,7 +19,7 @@
 | 主程序 | `src/BD.WTTS.Client.Avalonia.App`（程序集名 **Steam++**）。发布出来的 `Steam++.exe` 其实是 net35 的 AppHost 启动器，真正逻辑在 `assemblies/Steam++.dll` |
 | 怎么构建 | `dotnet build src/BD.WTTS.Client.Avalonia.App/BD.WTTS.Client.Avalonia.App.csproj -c Debug -f net11.0-windows10.0.19041.0` |
 | 怎么测 | `dotnet test src/BD.WTTS.UnitTest/BD.WTTS.UnitTest.csproj -c Debug`（NUnit） |
-| 怎么打包 | `src/BD.WTTS.Client.Tools.Publish`（可执行名 **`pub`**）；`packaging/` 与 `.github/workflows/*.yml` **全部过时，照抄必失败** |
+| 怎么打包 | `src/BD.WTTS.Client.Tools.Publish`（可执行名 **`pub`**）；`packaging/` 下的脚本是 v2/v1 遗留（勿用），CI 打包走 `.github/workflows/publish.yml` |
 | 最大坑 | ① `ref/` 下 17 个 git 子模块**只读**；② 52% 的 `.cs` 不写 `using`（全局 using 体系）；③ 所有 `BD.WTTS.*` 项目 `RootNamespace=BD.WTTS`，namespace 与目录**刻意不对齐**；④ 服务按 `AppServicesLevel` 分级注册，级别错了会让轻量进程（反代子进程等）启动失败 |
 
 ---
@@ -92,7 +92,7 @@ res/                        # 图标、品牌图、截图
 build/                      # Linux 用户侧运行脚本（随产物分发）+ 过时的 macOS/AOT 脚本
 packaging/                  # ⚠️ 全部是 v2/v1 遗留，已失效
 doc/                        # file-system.md、publish.md、program-file-structure/（Windows.md 是空文件）
-.github/workflows/          # ⚠️ 三个 workflow 全部引用已删除路径，当前没有能跑通的 CI
+.github/workflows/          # dotnet.yml = 构建+测试（Win/Linux；macOS advisory）、publish.yml = 未签名预览包
 ```
 
 ---
@@ -180,7 +180,7 @@ src/BD.WTTS.Client.Tools.Publish/bin/Release/net11.0/pub.exe run --rids win-x64
 
 | 文件 | 为什么不能用 |
 | --- | --- |
-| `.github/workflows/dotnet.yml`、`publish.yml`、`xamarin.yml` | 全部引用已删除的 `SteamToolsV2+.sln`、`tests/*`、`src/ST.Client.Desktop.Avalonia.App`、`src/ST.Tools.Publish`；`setup-dotnet 6.0.x` 与 `global.json` 的 11.0.0 冲突 |
+| ~~`.github/workflows/dotnet.yml`、`publish.yml`、`xamarin.yml`~~ | **2026-11-03 已重写/清理**：`dotnet.yml` = Windows+Linux 构建与测试（macOS 为 advisory）、`publish.yml` = 未签名预览包；`xamarin.yml`/`sync-gitee.yml`/`CI.yml.bak` 已删除。历史版本曾整体引用已删除的 `SteamToolsV2+.sln`、`tests/*`、`src/ST.Client.Desktop.Avalonia.App` |
 | `packaging/build.ps1`、`packaging/build.cmd`、`packaging/build.v1.ps1` | v2/v1 遗留，路径与 TFM 全过期 |
 | `build/macos/build.sh` | 个人机脚本，硬编码本机路径 + `net8.0-macos` |
 | `build/publish_apphost_linux_x64.sh` | `net7.0` + NativeAOT 实验 |

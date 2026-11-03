@@ -114,9 +114,10 @@ jobs:
         run: dotnet build src/BD.WTTS.Client.Avalonia.App/BD.WTTS.Client.Avalonia.App.csproj -c Release -f net11.0 --nologo
 
   macos:
-    # Apple workload 在 CI 上安装较慢，且 .NET 11 的 macos workload 版本需要与 global.json 对齐，
-    # 因此先以 advisory（不阻塞合并）方式运行；稳定后可去掉 continue-on-error。
-    name: macOS / net11.0-macos (advisory)
+    # .NET 11 的 macOS SDK 要求 Xcode 27.0，而当前 GitHub 托管 runner 只有 Xcode 26.6
+    # （error: This version of .NET for macOS requires Xcode 27.0），因此这里以 advisory 方式运行：
+    # 失败不阻塞整体 workflow；等 runner 镜像升级 Xcode 后可去掉 continue-on-error。
+    name: macOS / net11.0-macos (advisory, needs Xcode 27)
     runs-on: macos-latest
     continue-on-error: true
     steps:
@@ -146,6 +147,9 @@ jobs:
 
       # macOS 上 BD.WTTS.Client 走 TFM_NETX_WITH_ALL，TFM 列表会带上 net11.0-ios / net11.0-maccatalyst，
       # 因此不能只装 macos workload；用 workload restore 让 SDK 按项目自动安装所需 workload。
+      - name: Show Xcode version
+        run: xcodebuild -version || true
+
       - name: Restore workloads
         run: dotnet workload restore src/BD.WTTS.Client.Avalonia.App/BD.WTTS.Client.Avalonia.App.csproj
 
