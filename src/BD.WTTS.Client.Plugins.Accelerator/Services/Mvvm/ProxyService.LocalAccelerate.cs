@@ -129,12 +129,34 @@ partial class ProxyService
             "steamserver.net";
 
         /// <summary>
-        /// Pixiv 全部已知域名。⚠️ 中国大陆网络下需要二级代理，否则直连会被 IP 封锁。
+        /// 实测「换 SNI + 保留原 Host」可直接拿到内容的站点（2026-11 实测 200 OK）。
+        /// <para>原理：这些站点按 HTTP Host 路由，不按 TLS SNI 路由；
+        /// 所以把 SNI 换成一个未被封锁的名字，就能绕过 SNI 关键词阻断。</para>
+        /// <para>⚠️ 必须同时设置 <c>FakeServerName</c> 与 <c>IgnoreSSLCertVerification</c>。</para>
+        /// </summary>
+        const string NeutralSni = "example.com";
+
+        /// <summary>Pixiv 图片源站（实测 200 OK，无需反代）。</summary>
+        const string PixivImageDomains = "i.pximg.net;s.pximg.net;i-cf.pximg.net";
+        const string PixivImageIp = "210.140.139.130";
+
+        const string DuckDuckGoDomains = "duckduckgo.com;www.duckduckgo.com;duck.com";
+        const string DuckDuckGoIp = "20.43.161.105";
+
+        const string ProtonDomains = "proton.me;www.proton.me;account.proton.me";
+        const string ProtonIp = "185.70.42.45";
+
+        const string InstagramDomains = "instagram.com;www.instagram.com;i.instagram.com";
+        const string InstagramIp = "57.144.64.34";
+
+        /// <summary>
+        /// Pixiv 主站域名。⚠️ 主站挂在 Cloudflare 上，按 SNI 路由，
+        /// 换 SNI 只会拿到 403，因此必须用一个自己的 Worker / 反代域名来承接（见 doc/accelerator.md §9.6）。
         /// </summary>
         const string PixivDomains =
             "pixiv.net;www.pixiv.net;accounts.pixiv.net;source.pixiv.net;sketch.pixiv.net;" +
             "dic.pixiv.net;comic.pixiv.net;novel.pixiv.net;fanbox.pixiv.net;payment.pixiv.net;" +
-            "oauth.secure.pixiv.net;i.pximg.net;s.pximg.net;i-cf.pximg.net";
+            "oauth.secure.pixiv.net";
 
         /// <summary>
         /// 维基百科/维基媒体的常用域名。⚠️ 同 Pixiv，需要二级代理。
@@ -158,8 +180,12 @@ partial class ProxyService
                 Item("Steam 静态补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9003", SteamStaticSupplementDomains, "steamstatic.rmbgame.net"),
                 Item("Steam 下载补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9004", SteamDownloadSupplementDomains, "steammedia.rmbgame.net")),
             Group("其他网站（本地）", 9002,
-                Item("Pixiv（需二级代理/落地 IP）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9101", PixivDomains, ignoreSslCertVerification: true),
-                Item("维基百科（需二级代理/落地 IP）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", WikipediaDomains, ignoreSslCertVerification: true)),
+                Item("Pixiv 图片（直连源站）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9101", PixivImageDomains, PixivImageIp, NeutralSni, true),
+                Item("DuckDuckGo（换 SNI 直连）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9104", DuckDuckGoDomains, DuckDuckGoIp, NeutralSni, true),
+                Item("Proton（换 SNI 直连）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9105", ProtonDomains, ProtonIp, NeutralSni, true),
+                Item("Instagram（换 SNI 直连）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9106", InstagramDomains, InstagramIp, NeutralSni, true),
+                Item("Pixiv 主站（需自建 Worker 反代）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", PixivDomains, ignoreSslCertVerification: true),
+                Item("维基百科（IP 层封锁，需反代）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9103", WikipediaDomains, ignoreSslCertVerification: true)),
         };
     }
 }

@@ -378,3 +378,51 @@ GitHub 官配                 20.207.73.82      无 SNI / github.com   OK TLSv1.
 **这不是「缺 IP」，而是「缺一条能发出真实 SNI 的通道」** —— 只能靠中转解决。
 
 > TLS 分片（byedpi / zapret 路线）本轮未能得到干净结论：本地转发代理本身有问题（对照组也不通），需要更严谨的实现或直接用现成工具验证，暂记为「未验证」。
+
+---
+
+## 10. 被墙站点分类与可接入清单（2026-11 实测）
+
+判定方法：DoH 取真实 IP → **直连**（不走系统代理）→ 分别用「真实 SNI」和「中性 SNI(`example.com`)」握手 → 再用 `Host: 原域名` 发一个 HTTP 请求看状态码。
+
+### 10.1 四类结果
+
+| 类别 | 含义 | 处理方式 |
+| --- | --- | --- |
+| **A 直连可用** | 真 SNI 就能握手 | 只要纠正 DNS（hosts / 指定 IP） |
+| **B 仅 SNI 被封** | 真 SNI 被 RST，换 SNI 可握手 | 若站点**按 Host 路由** → 换 SNI + 原 Host 即可；若按 SNI 路由（CF/Meta 边缘）→ 必须反代 |
+| **C 全封** | TCP 都建不起来 | 只能中转 |
+| **D 握手失败** | TCP 通但两种 SNI 都失败 | 只能中转 |
+
+### 10.2 实测明细
+
+| 站点 | IP | 真 SNI | 换 SNI | `Host: 原域名` | 归类 |
+| --- | --- | --- | --- | --- | --- |
+| github.com | 20.205.243.166 | OK | OK | — | A |
+| raw.githubusercontent.com | 185.199.110.133 | OK | OK | — | A |
+| www.netflix.com | 207.45.73.1 | OK | OK | — | A |
+| **i.pximg.net**（Pixiv 图片） | 210.140.139.130 | RST | OK | **200 OK** | **B（可直连）** |
+| steamcommunity.com | 23.15.140.216 | RST | OK | **200 OK** | B（官方已内置） |
+| duckduckgo.com | 20.43.161.105 | RST | OK | **200 OK** | **B（可直连）** |
+| proton.me | 185.70.42.45 | RST | OK | **200 OK** | **B（可直连）** |
+| www.instagram.com | 57.144.64.34 | RST | OK | **200 OK** | **B（可直连）** |
+| www.pixiv.net | 104.18.42.239 | RST | OK | **403**（CF 按 SNI 路由） | B（需反代） |
+| discord.com | 162.159.137.232 | RST | OK | **403**（CF 按 SNI 路由） | B（需反代） |
+| www.google.com / youtube.com / www.twitch.tv / web.telegram.org / www.bbc.com / archive.org | — | TCP 失败 | — | — | **C 全封** |
+| zh/en.wikipedia.org / upload.wikimedia.org（主体网段） | 103.102.166.224 等 | TIMEOUT | TIMEOUT | — | **D** |
+
+> 维基：`185.15.56.100` 这个节点曾出现过「换 SNI 可握手」，但随后的 HTTP 请求全部超时，不稳定；
+> 其余文本节点（208.80.153/154.x、103.102.166.x、198.35.26.x）TLS 全部失败。**结论：维基正文当前没有可用 IP，必须中转。**
+
+### 10.3 已接入本地覆盖层的条目
+
+| 条目 | 域名 | 落地 IP | 伪装 SNI |
+| --- | --- | --- | --- |
+| Pixiv 图片（直连源站） | `i.pximg.net;s.pximg.net;i-cf.pximg.net` | `210.140.139.130` | `example.com` |
+| DuckDuckGo（换 SNI 直连） | `duckduckgo.com;www.duckduckgo.com;duck.com` | `20.43.161.105` | `example.com` |
+| Proton（换 SNI 直连） | `proton.me;www.proton.me;account.proton.me` | `185.70.42.45` | `example.com` |
+| Instagram（换 SNI 直连） | `instagram.com;www.instagram.com;i.instagram.com` | `57.144.64.34` | `example.com` |
+| Pixiv 主站（需自建 Worker 反代） | pixiv.net 全站 | — | — |
+| 维基百科（IP 层封锁，需反代） | wikipedia.org / wikimedia.org | — | — |
+
+> ⚠️ 这些 IP 是**某一时刻**的实测结果，会随 CDN 调度变化；失效时表现为该条目资源加载失败，单独取消勾选即可，不影响其它条目。
