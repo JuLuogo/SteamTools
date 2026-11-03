@@ -33,7 +33,9 @@
            由 MatchDomainNames 命中域名，按 SNI 现签叶子证书（根证书 CN=SteamTools Certificate）后 MITM
            ↓
 ⑦ 出站      ForwardDomainNames 为空 → 走 DoH 解析后直连；
-           为域名/IP → 连到该目标；为绝对 URL 且 ProxyType=ServerAccelerate → 交给 Watt 服务端中转
+           为域名 → 连该域名（镜像）；为 IP → 直接连这个 IP（绕过 DNS 污染）；
+           为绝对 URL 且 ProxyType=ServerAccelerate → 交给 Watt 服务端中转
+           TLS 握手的 SNI 由 FakeServerName 决定：为空 → 不发 SNI；否则发伪装值（可含 @domain/@ipaddress/@random）
            若开启「二级代理」（TwoLevelAgent）→ 先经 Http/Socks4/Socks5 隧道
 ```
 
@@ -62,17 +64,34 @@
 
 ---
 
-## 4. 两个关键字段
+## 4. 关键字段（含 **SNI 伪装**与**落地 IP**）
 
-| 字段 | 作用 | 注意 |
+服务端返回的是**兼容 DTO**（`AccelerateProjectDTOCompat`），字段名和客户端内部 DTO 不同，换算关系如下：
+
+| 兼容字段（服务端） | 客户端 `AccelerateProjectDTO` | 作用 |
 | --- | --- | --- |
-| `MatchDomainNames` | 决定「哪些请求会被拦截并进入反代」，支持 `;` 分隔、`*` 通配（只匹配单层 label）、`/` 开头的正则 | 不能为空，否则 `ReverseProxyConfig` 抛异常 |
-| `ListenDomainNames` | 决定「写进 hosts 的域名」与 UI 展示 | **Hosts 模式下必须是字面域名**，写 `*` 无效 |
-| `ForwardDomainNames` | 转发目标：空=直连原站（DoH）；域名/IP=连到它；`ServerAccelerate` 时为绝对 URL | 与 `ProxyType` 必须匹配 |
+| `DomainNames` | `MatchDomainNames` | 决定「哪些请求被拦截进入反代」，支持 `;` 分隔、`*` 单层通配、`/` 正则；不能为空 |
+| `Hosts` | `ListenDomainNames` | 写进 hosts 的域名；**Hosts 模式必须是字面域名**，`*` 无效 |
+| `ForwardDomainName` | `ForwardDomainNames` | 转发目标域名（镜像） |
+| **`ForwardDomainIP`** | 同上（填 IP 形式） | **强制连接的目标 IP**，绕过 DNS 污染 |
+| **`ServerName`** | **`FakeServerName`** | **伪装的上游 SNI**；为空=不发 SNI；支持 `@domain` / `@ipaddress` / `@random` |
+| — | `IgnoreSSLCertVerification` | 伪装 SNI 后证书名对不上时放宽校验 |
 
 `ProxyType`：`Local`（本地直连/指定目标，官方列表全用它）、`Redirect`（按 Port 组 URL 重定向）、`ServerAccelerate`（Watt 服务端中转，需登录换令牌）。
 
 `ProxyMode`：`Hosts`（默认，桌面）、`System`、`PAC`、`DNSIntercept`（Windows 驱动）、`VPN`（移动端）、`ProxyOnly`。
+
+### 4.1 官方列表里这两项的真实用法（抓包所得）
+
+| 条目 | 落地 IP | 伪装 SNI |
+| --- | --- | --- |
+| Github 网站 (Git Push) | `20.207.73.82` | 空（不发 SNI） |
+| Github UserContent | `23.235.37.133` | `Github` |
+| Steam 社区 | 镜像 `steamcommunity.rmbgame.net` | `steamstore-a.akamaihd.net` |
+| Twitch 直播聊天 | `44.253.240.15` | `ttv` |
+| Uplay 商店 / Nexusmods / hCaptcha | 镜像 | `@domain` |
+
+→ **结论：SNI 伪装是本项目原生能力，官方一直在用**，不是需要额外开发的东西。
 
 ---
 
@@ -107,33 +126,57 @@
 
 ## 6. 能不能套用到 pixiv / 维基百科？
 
-**结论：同一套机制可以配，但默认网络下不能正常访问。**
+> **更正**：本文早期版本写过「回源默认带真实 SNI，所以 SNI 封锁不可解」——**这是错的**。
+> 回源 SNI 由 `FakeServerName` 决定，为空时**根本不发 SNI**；官方列表里还在大量使用伪装 SNI（见 §4.1）。
+> 同样地，早先的连通性测试是「拿系统 DNS/DoH 解析结果直接 TCP 连」，那**不是软件的真实路径**（软件可以连指定 IP + 伪装 SNI），所以那个结论也不成立。
 
-本机实测（Windows，未开代理）：
+### 6.1 三层封锁，逐层看这套机制能做什么
+
+| 封锁层 | 表现 | 本机制 | 依据 |
+| --- | --- | --- | --- |
+| DNS 污染 | 域名解析到假 IP / 127.0.0.1 | ✅ 可解 | 用 `ForwardDomainIP` 指定落地 IP，或反代内置 DoH 解析 |
+| SNI 关键词阻断 | 握手时看到黑名单 SNI 就 RST | ✅ 可解 | `FakeServerName` 发空/伪装 SNI + 忽略证书校验 |
+| TCP/IP 层封锁 | 连目标 IP 的 443 直接被 RST/丢包 | ❌ 不可解（需中转） | 只能走二级代理或 `ServerAccelerate` |
+
+### 6.2 实测（本机 Windows，FlClash 在跑但测试是直连）
 
 ```text
-github.com              dns=127.0.0.1   tcp443=OK     ← 已被 hosts 劫持到本机反代，可用
-store.steampowered.com  dns=127.0.0.1   tcp443=OK
-pixiv.net               dns=154.83.15.45 tcp443=FAIL  ← 真实 IP，但连接被阻断
-zh.wikipedia.org        dns=31.13.68.169 tcp443=FAIL  ← 返回的是 Facebook 的 IP（DNS 污染）
+官方给 GitHub 的落地 IP：
+  20.207.73.82   SNI=github.com  → TLS_OK  CN=github.com      ← 官方为什么能加速
+  20.43.185.14   SNI=github.com  → TLS_OK  CN=Kubernetes Ingress ...
+  140.82.112.29  SNI=github.com  → TLS_OK  CN=*.githubapp.com
+
+DoH 解析出来的 GitHub IP：
+  20.205.243.166 SNI=github.com  → TLS_OK（时通时断，GFW 对 GitHub 是间歇性的）
+
+pixiv（Cloudflare 段）：
+  104.18.42.239  SNI=www.pixiv.net → TCP 通，TLS 被 RST
+  104.18.42.239  SNI=example.com   → 同样被 RST（说明不是按 SNI 匹配，是链路/IP 层）
+
+维基百科：
+  103.102.166.224（zh.wikipedia.org 真实 IP）→ TCP 直接 REFUSED
 ```
 
-原因：本地反代最终仍要**自己连到目标服务器**。
+**判读**：
+- GitHub 能加速，主要靠「**指定可用落地 IP**」这一层，而不是 SNI；
+- pixiv / 维基百科是 **TCP 层就建不起来**，换 SNI 也没用——这类必须走中转。
 
-| 站点类型 | 问题 | 本机制是否有效 |
-| --- | --- | --- |
-| GitHub / Steam 社区 | DNS 污染 + 部分慢 | ✅ 有效（纠正解析后能连上） |
-| pixiv / 维基百科 | DNS 污染 **且** IP/SNI 被阻断 | ❌ 直连无效 |
+### 6.3 所以新增站点需要什么
 
-让它们可用的**唯一**办法是让出站流量经过境外中转，二选一：
-1. **二级代理**（推荐，客户端已内置）：设置 → 加速设置 → 二级代理，填本机的 Http/SOCKS5 代理（如 `127.0.0.1:7890`）；
-2. `ProxyType=ServerAccelerate`（Watt 服务端中转）：需要登录换令牌，且服务端要支持这些站点。
+1. **首要**：该站点有**可用的落地 IP**（填 `ForwardDomainNames`，等价官方 `ForwardDomainIP`）；
+2. **其次**：若落地 IP 是共享 CDN/镜像，需要正确的 **SNI**（`FakeServerName`）+ `IgnoreSSLCertVerification`；
+3. **兜底**：以上都没有时，用**二级代理**（客户端已内置：设置 → 加速设置 → 二级代理，填本机 Http/SOCKS5，如 `127.0.0.1:7890`）或 `ServerAccelerate` 服务端中转。
 
-所以本地内置的 `Pixiv` / `维基百科` 条目**默认不勾选**，名称里直接标了「需二级代理」，避免误导。
+因此本地内置的 `Pixiv` / `维基百科` 条目：
+- **默认不勾选**，名称标「需二级代理/落地 IP」；
+- 已设 `IgnoreSSLCertVerification = true`，方便你后续把它们改成一个可用 IP + 伪装 SNI 后直接生效；
+- 只要开了二级代理（你机器上的 FlClash 就是现成的），勾选即可正常访问。
 
-**B 站（bilibili）不加入**：大陆本身可直连（实测 199/200 个探测点可访问），海外访问受限是**版权地区限制**，不是网络问题，加速没有意义。
+**B 站（bilibili）不加入**：大陆本身可直连，海外受限是**版权地区限制**而非网络问题，加速没有意义。
 
 ---
+
+
 
 ## 7. 「游戏加速」板块要不要删？
 
@@ -153,7 +196,7 @@ zh.wikipedia.org        dns=31.13.68.169 tcp443=FAIL  ← 返回的是 Facebook 
 
 1. 编辑 `ProxyService.LocalAccelerate.cs`：
    - 新增一个 `const string XxxDomains = "a.com;b.a.com;...";`（**Hosts 模式必须逐个枚举，不能写 `*`**）；
-   - 在对应 `Group(...)` 里加一条 `Item("显示名", "稳定的-Guid", XxxDomains[, 转发目标])`。
+   - 在对应 `Grou...)` 里加一条 `Item("显示名", "稳定的-Guid", XxxDomains[, 转发目标])`。
 2. 三条硬性约束：`Name` 唯一、`Id` 必须写死且不重复、`MatchDomainNames` 不能为空。
 3. 勾选状态存在 `{AppData}/Plugins/Accelerator/Settings/ProxySettings.json` 的 `SupportProxyServicesStatus`（Guid 集合），改 Id 等于让老用户重新勾选。
 4. 想让它对所有用户生效 → 只能改服务端 `accelerator/projectgroups` 的数据（不在本仓库）。
