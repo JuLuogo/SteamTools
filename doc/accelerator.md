@@ -83,13 +83,24 @@
 官方列表已覆盖：`github.com`、`api.github.com`、`gist.github.com`、`pages.github.com`、`github.githubassets.com`、`support-assets.githubassets.com`、`education/resources/uploads/archiveprogram.github.com`、`raw.githubusercontent.com`、`camo/cloud/avatars(0-3)/user-images/objects/private-user-images.githubusercontent.com`、`raw.github.com`、`github.io`、`github.dev`、`githubapp.com`、`hub.docker.com`。
 
 **缺失并已补齐**（`GitHubSupplementDomains`，直连）：
-`codeload.github.com`、`gist.githubusercontent.com`、`media.githubusercontent.com`、`objects-origin.githubusercontent.com`、`release-assets.githubusercontent.com`、`github-releases.githubusercontent.com`、`github-registry-files.githubusercontent.com`、`avatars4/5.githubusercontent.com`、`pkg-containers.githubusercontent.com`、`ghcr.io`、`api.githubcopilot.com`、`copilot-proxy.githubusercontent.com`、`git-lfs.github.com`、`npm/maven/nuget/rubygems.pkg.github.com`。
+
+- 源码/Release/GitLFS：`codeload.github.com`、`gist.githubusercontent.com`、`media.githubusercontent.com`、`objects-origin.githubusercontent.com`、`release-assets.githubusercontent.com`、`github-releases.githubusercontent.com`、`github-registry-files.githubusercontent.com`、`git-lfs.github.com`、`github-cloud.s3.amazonaws.com`
+- 头像/包注册表/容器：`avatars4/5.githubusercontent.com`、`npm/maven/nuget/rubygems.pkg.github.com`、`pkg-containers.githubusercontent.com`、`ghcr.io`
+- Copilot：`api.githubcopilot.com`、`copilot-proxy.githubusercontent.com`、`default.exp-tas.com`
+- Actions 运行时：`pipelines/vstoken/results-receiver/artifactcache/blob/objects.actions.githubusercontent.com`
+
+> 官方 allowlist 里还有 `*.githubcopilot.com`、`*.actions.githubusercontent.com` 这类通配，**Hosts 模式写不了通配**，所以这里只能枚举已知主机。
 
 ### 5.2 Steam：**CDN 边缘节点不全**，已按镜像补齐
 
 官方列表已覆盖商店/社区/登录/结算 + 图片与静态资源镜像 + `*.st.dl.eccdnx.com`。
-补齐项走**同一批镜像域名**（镜像按 Host 转发，新增同一 CDN 家族的主机通常可用）：
-`shared/clan.akamai.steamstatic.com`、`cdn/community/store.cloudflare.steamstatic.com`、`steamcommunity-a.akamaihd.net`、`cdn.steamstatic.com`、`steamstatic.com`。
+补齐项走**已有镜像**（镜像按 Host 转发，同一 CDN 家族的主机通常可用）：
+
+| 新增条目 | 主机 | 转发到 |
+| --- | --- | --- |
+| Steam 图片补充 | `shared/clan.akamai.steamstatic.com`、`cdn/community/store.cloudflare.steamstatic.com`、`steamcommunity-a.akamaihd.net`、`steamusercontent.com` | `steamimage.rmbgame.net` |
+| Steam 静态补充 | `cdn.steamstatic.com`、`steamstatic.com` | `steamstatic.rmbgame.net` |
+| Steam 下载补充 | `steamcontent.com`、`steam-chat.com`、`steamserver.net` | `steammedia.rmbgame.net` |
 ⚠️ 若某个新增主机在镜像侧不被接受，表现为该资源仍加载失败——不会影响其它条目，可单独取消勾选。
 
 ---
@@ -119,6 +130,8 @@ zh.wikipedia.org        dns=31.13.68.169 tcp443=FAIL  ← 返回的是 Facebook 
 2. `ProxyType=ServerAccelerate`（Watt 服务端中转）：需要登录换令牌，且服务端要支持这些站点。
 
 所以本地内置的 `Pixiv` / `维基百科` 条目**默认不勾选**，名称里直接标了「需二级代理」，避免误导。
+
+**B 站（bilibili）不加入**：大陆本身可直连（实测 199/200 个探测点可访问），海外访问受限是**版权地区限制**，不是网络问题，加速没有意义。
 
 ---
 

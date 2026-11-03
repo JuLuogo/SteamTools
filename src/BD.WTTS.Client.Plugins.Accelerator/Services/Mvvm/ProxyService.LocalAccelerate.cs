@@ -75,7 +75,16 @@ partial class ProxyService
             "npm.pkg.github.com;" +
             "maven.pkg.github.com;" +
             "nuget.pkg.github.com;" +
-            "rubygems.pkg.github.com";
+            "rubygems.pkg.github.com;" +
+            "default.exp-tas.com;" +
+            "github-cloud.s3.amazonaws.com;" +
+            // GitHub Actions 的运行时代理与制品缓存（官方 allowlist 里是 *.actions.githubusercontent.com，hosts 模式无法写通配）
+            "pipelines.actions.githubusercontent.com;" +
+            "vstoken.actions.githubusercontent.com;" +
+            "results-receiver.actions.githubusercontent.com;" +
+            "artifactcache.actions.githubusercontent.com;" +
+            "blob.actions.githubusercontent.com;" +
+            "objects.actions.githubusercontent.com";
 
         /// <summary>
         /// 本地补充的 Steam 图片类 CDN（沿用官方列表里已有的图片镜像域名）。
@@ -86,7 +95,8 @@ partial class ProxyService
             "cdn.cloudflare.steamstatic.com;" +
             "community.cloudflare.steamstatic.com;" +
             "store.cloudflare.steamstatic.com;" +
-            "steamcommunity-a.akamaihd.net";
+            "steamcommunity-a.akamaihd.net;" +
+            "steamusercontent.com";
 
         /// <summary>
         /// 本地补充的 Steam 静态资源 CDN（沿用官方列表里已有的静态镜像域名）。
@@ -94,6 +104,14 @@ partial class ProxyService
         const string SteamStaticSupplementDomains =
             "cdn.steamstatic.com;" +
             "steamstatic.com";
+
+        /// <summary>
+        /// 本地补充的 Steam 下载/CDN 根域（沿用官方列表里已有的下载镜像域名）。
+        /// </summary>
+        const string SteamDownloadSupplementDomains =
+            "steamcontent.com;" +
+            "steam-chat.com;" +
+            "steamserver.net";
 
         /// <summary>
         /// Pixiv 全部已知域名。⚠️ 中国大陆网络下需要二级代理，否则直连会被 IP 封锁。
@@ -115,16 +133,6 @@ partial class ProxyService
             "api.wikimedia.org;login.wikimedia.org;donate.wikimedia.org";
 
         /// <summary>
-        /// 哔哩哔哩常用域名（对海外访问更有意义；国内用户一般不需要勾选）。
-        /// </summary>
-        const string BilibiliDomains =
-            "bilibili.com;www.bilibili.com;api.bilibili.com;passport.bilibili.com;" +
-            "space.bilibili.com;live.bilibili.com;t.bilibili.com;bangumi.bilibili.com;" +
-            "data.bilibili.com;message.bilibili.com;" +
-            "hdslb.com;" +
-            "i0.hdslb.com;i1.hdslb.com;i2.hdslb.com;s1.hdslb.com";
-
-        /// <summary>
         /// 需要合并进 <see cref="ProxyDomains"/> 的本地加速项目组（顺序即 UI 中的排序）。
         /// </summary>
         public static IReadOnlyList<AccelerateProjectGroupDTO> Groups { get; } = new AccelerateProjectGroupDTO[]
@@ -132,11 +140,11 @@ partial class ProxyService
             Group("补充加速（本地）", 9001,
                 Item("GitHub 补充子域名（直连）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9001", GitHubSupplementDomains),
                 Item("Steam 图片补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9002", SteamImageSupplementDomains, "steamimage.rmbgame.net"),
-                Item("Steam 静态补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9003", SteamStaticSupplementDomains, "steamstatic.rmbgame.net")),
+                Item("Steam 静态补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9003", SteamStaticSupplementDomains, "steamstatic.rmbgame.net"),
+                Item("Steam 下载补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9004", SteamDownloadSupplementDomains, "steammedia.rmbgame.net")),
             Group("其他网站（本地）", 9002,
                 Item("Pixiv（需二级代理）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9101", PixivDomains),
-                Item("维基百科（需二级代理）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", WikipediaDomains),
-                Item("哔哩哔哩", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9103", BilibiliDomains)),
+                Item("维基百科（需二级代理）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", WikipediaDomains)),
         };
     }
 }
