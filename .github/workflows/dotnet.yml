@@ -27,6 +27,9 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  # Linux/macOS runner 上 NuGet 对 Splat 19.3.1 等包做签名链校验会因证书吊销失败（NU3012），
+  # 改为离线吊销模式即可正常还原（不影响包完整性校验）。
+  NUGET_CERT_REVOCATION_MODE: offline
 
 jobs:
   windows:
@@ -141,8 +144,10 @@ jobs:
           dotnet-version: 11.0.x
           dotnet-quality: preview
 
-      - name: Install macOS workload
-        run: dotnet workload install macos
+      # macOS 上 BD.WTTS.Client 走 TFM_NETX_WITH_ALL，TFM 列表会带上 net11.0-ios / net11.0-maccatalyst，
+      # 因此不能只装 macos workload；用 workload restore 让 SDK 按项目自动安装所需 workload。
+      - name: Restore workloads
+        run: dotnet workload restore src/BD.WTTS.Client.Avalonia.App/BD.WTTS.Client.Avalonia.App.csproj
 
       - name: Build main app
         run: dotnet build src/BD.WTTS.Client.Avalonia.App/BD.WTTS.Client.Avalonia.App.csproj -c Release -f net11.0-macos --nologo
