@@ -2,7 +2,7 @@
 
 > **适用范围**：本仓库内的所有代码改动（`src/`、`build/`、`packaging/`、`doc/`、`.github/`）。
 > **读者**：在本仓库工作的 AI Agent（DSH / Claude Code / Codex / Copilot / Cursor 等）与人类维护者。
-> **事实基线**：分支 `develop`、HEAD `76b0a5fc2`、`.NET SDK 11.0`、Avalonia `12.1.4`、ReactiveUI `23.2.28`。
+> **事实基线**：分支 `develop`、`.NET SDK 11.0`、Avalonia `12.1.4`、ReactiveUI `23.2.28`。
 > 本文件只写**能改变你决策**的内容。通用常识（「写好注释」「保持整洁」）不在此列；带 ⚠️ 的是本仓库特有的陷阱。
 > 维护方式：改动构建系统、代码约定、程序入口时同步更新本文件，否则本文件会比 README 更容易骗人。
 
@@ -448,5 +448,5 @@ src/BD.WTTS.Client.Tools.Publish/bin/Release/net11.0/pub.exe run --rids win-x64
 
 ---
 
-*本文件由仓库审查生成，事实基线 HEAD `76b0a5fc2`。若发现与代码不符，以代码为准并修正本文件。*
+*本文件由仓库审查生成（审查基线为 `76b0a5fc2`，子模块迁移提交后依然适用）。若发现与代码不符，以代码为准并修正本文件。*
 
