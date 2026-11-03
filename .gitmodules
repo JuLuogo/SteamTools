@@ -1,51 +1,51 @@
 [submodule "ref/DirectoryPackages"]
 	path = ref/DirectoryPackages
-	url = https://github.com/BeyondDimension/DirectoryPackages.git
+	url = https://github.com/stea-peroe/DirectoryPackages.git
 [submodule "ref/ArchiSteamFarm"]
 	path = ref/ArchiSteamFarm
-	url = https://github.com/BeyondDimension/ArchiSteamFarm.git
+	url = https://github.com/stea-peroe/ArchiSteamFarm.git
 [submodule "ref/Avalonia.Image2"]
 	path = ref/Avalonia.Image2
-	url = https://github.com/BeyondDimension/Avalonia.Image2.git
+	url = https://github.com/stea-peroe/Avalonia.Image2.git
 [submodule "ref/Gameloop.Vdf"]
 	path = ref/Gameloop.Vdf
-	url = https://github.com/BeyondDimension/Gameloop.Vdf.git
+	url = https://github.com/stea-peroe/Gameloop.Vdf.git
 [submodule "ref/Steam4NET"]
 	path = ref/Steam4NET
-	url = https://github.com/BeyondDimension/Steam4NET.git
+	url = https://github.com/stea-peroe/Steam4NET.git
 [submodule "ref/Titanium-Web-Proxy"]
 	path = ref/Titanium-Web-Proxy
-	url = https://github.com/BeyondDimension/Titanium-Web-Proxy.git
+	url = https://github.com/stea-peroe/Titanium-Web-Proxy.git
 [submodule "ref/SteamAchievementManager"]
 	path = ref/SteamAchievementManager
-	url = https://github.com/BeyondDimension/SteamAchievementManager.git
+	url = https://github.com/stea-peroe/SteamAchievementManager.git
 [submodule "ref/SteamClient"]
 	path = ref/SteamClient
-	url = https://github.com/BeyondDimension/SteamClient
+	url = https://github.com/stea-peroe/SteamClient
 [submodule "ref/dotnet-packaging"]
 	path = ref/dotnet-packaging
-	url = https://github.com/quamotion/dotnet-packaging.git
+	url = https://github.com/stea-peroe/dotnet-packaging.git
 [submodule "ref/WTTS.MicroServices.ClientSDK"]
 	path = ref/WTTS.MicroServices.ClientSDK
-	url = https://github.com/BeyondDimension/WTTS.MicroServices.ClientSDK.git
+	url = https://github.com/stea-peroe/WTTS.MicroServices.ClientSDK.git
 [submodule "ref/Common"]
 	path = ref/Common
-	url = https://github.com/BeyondDimension/Common.git
+	url = https://github.com/stea-peroe/Common.git
 [submodule "ref/WinAuth"]
 	path = ref/WinAuth
-	url = https://github.com/BeyondDimension/WinAuth.git
+	url = https://github.com/stea-peroe/WinAuth.git
 [submodule "ref/Facepunch.Steamworks"]
 	path = ref/Facepunch.Steamworks
-	url = https://github.com/BeyondDimension/Facepunch.Steamworks.git
+	url = https://github.com/stea-peroe/Facepunch.Steamworks.git
 [submodule "ref/appcenter-sdk-dotnet"]
 	path = ref/appcenter-sdk-dotnet
-	url = https://github.com/BeyondDimension/appcenter-sdk-dotnet.git
+	url = https://github.com/stea-peroe/appcenter-sdk-dotnet.git
 [submodule "ref/Fusillade"]
 	path = ref/Fusillade
-	url = https://github.com/reactiveui/Fusillade
+	url = https://github.com/stea-peroe/Fusillade
 [submodule "ref/Avalonia8"]
 	path = ref/Avalonia8
-	url = https://github.com/BeyondDimension/Avalonia8
+	url = https://github.com/stea-peroe/Avalonia8
 [submodule "ref/dotnetCampus.Ipc"]
 	path = ref/dotnetCampus.Ipc
-	url = https://github.com/BeyondDimension/dotnetCampus.Ipc
+	url = https://github.com/stea-peroe/dotnetCampus.Ipc
