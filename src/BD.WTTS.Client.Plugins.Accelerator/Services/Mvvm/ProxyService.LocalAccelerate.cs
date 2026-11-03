@@ -33,8 +33,21 @@ partial class ProxyService
         /// <param name="name">显示名称。</param>
         /// <param name="id">稳定的 Guid 字符串（勾选状态持久化用）。</param>
         /// <param name="domains">分号分隔的域名列表，同时用作匹配规则与 hosts 条目。</param>
-        /// <param name="forwardDomainNames">转发目标（域名或 IP）；为空表示直连原站，走 DoH 解析。</param>
-        static AccelerateProjectDTO Item(string name, string id, string domains, string forwardDomainNames = "")
+        /// <param name="forwardDomainNames">
+        /// 转发目标：可为域名（走镜像）或 <b>IP</b>（直接连该 IP，绕过 DNS 污染，对应官方的 ForwardDomainIP）。
+        /// </param>
+        /// <param name="serverName">
+        /// 伪装的上游 SNI（对应官方的 ServerName）；为空表示不发 SNI。
+        /// 仅用于绕过 SNI 关键词阻断或适配镜像证书，对 IP 层封锁无效。
+        /// </param>
+        /// <param name="ignoreSslCertVerification">伪装 SNI 时通常要同时放宽证书校验。</param>
+        static AccelerateProjectDTO Item(
+            string name,
+            string id,
+            string domains,
+            string forwardDomainNames = "",
+            string? serverName = null,
+            bool ignoreSslCertVerification = false)
             => new()
             {
                 Name = name,
@@ -44,6 +57,8 @@ partial class ProxyService
                 MatchDomainNames = domains,
                 ListenDomainNames = domains,
                 ForwardDomainNames = forwardDomainNames,
+                FakeServerName = serverName,
+                IgnoreSSLCertVerification = ignoreSslCertVerification,
             };
 
         static AccelerateProjectGroupDTO Group(string name, long order, params AccelerateProjectDTO[] items)
@@ -143,8 +158,8 @@ partial class ProxyService
                 Item("Steam 静态补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9003", SteamStaticSupplementDomains, "steamstatic.rmbgame.net"),
                 Item("Steam 下载补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9004", SteamDownloadSupplementDomains, "steammedia.rmbgame.net")),
             Group("其他网站（本地）", 9002,
-                Item("Pixiv（需二级代理）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9101", PixivDomains),
-                Item("维基百科（需二级代理）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", WikipediaDomains)),
+                Item("Pixiv（需二级代理/落地 IP）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9101", PixivDomains, ignoreSslCertVerification: true),
+                Item("维基百科（需二级代理/落地 IP）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", WikipediaDomains, ignoreSslCertVerification: true)),
         };
     }
 }
