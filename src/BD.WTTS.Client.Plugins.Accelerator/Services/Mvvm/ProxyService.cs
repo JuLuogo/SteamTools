@@ -462,6 +462,11 @@ public sealed partial class ProxyService
 
             LoadOrSaveLocalAccelerate();
 
+            // 合并内置的本地加速项目（远端列表遗漏的子域名 + 「其他网站」分组）。
+            // 放在缓存读写之后：本地项不会写进 LOCAL_ACCELERATE.json，该文件保持「纯远端快照」语义；
+            // 放在恢复勾选状态之前：本地项的勾选状态也能被正确恢复。
+            ProxyDomains.AddOrUpdate(LocalAccelerateProjects.Groups);
+
             if (ProxySettings.SupportProxyServicesStatus.Value.Any_Nullable() && ProxyDomains.Items.Any_Nullable())
             {
                 var items = ProxyDomains.Items!.SelectMany(s => s.Items!);
