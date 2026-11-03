@@ -206,3 +206,72 @@ pixiv（Cloudflare 段）：
 - Hosts 模式：只能写**字面域名**，所以要真正「全部」就必须把子域名逐个列出来（维基百科有上百种语言子域，不现实）；
 - 想让 `*.wikipedia.org` 一条生效，需要把模式改成 **System / PAC / DNSIntercept**（这时 `MatchDomainNames` 里的通配才起作用），且匹配规则要写成 `/` 开头的正则最稳（默认非正则段是「前缀匹配且结尾无 `$`」，会误伤 `github.community` 这类同前缀域名）。
 
+---
+
+## 9. 参考实现：Pixiv-Nginx / SNIBypassGUI 是怎么做的
+
+GitHub 上这类「免代理直连 Pixiv/Wikipedia」的项目，代表是
+[mashirozx/Pixiv-Nginx](https://github.com/mashirozx/Pixiv-Nginx) 与它的图形化续作 [SNIBypassGUI](https://github.com/lllllyccc/SNIBypassGUI)。
+它们**不是**换个 SNI 了事，而是三件套：
+
+```nginx
+# 1) hosts：把 pixiv.net / pximg.net 全部指到 127.0.0.1
+# 2) 本地 nginx 监听 443，用自签证书冒充 pixiv
+server {
+    listen 443 ssl;
+    server_name www.pixiv.net;
+    ssl_certificate ca/pixiv.net.crt;
+    location / {
+        # proxy_ssl_server_name on;   ← 关键在于它被注释掉了 = 上游握手【不发 SNI】
+        proxy_pass https://www-pixiv-net;          # 3) upstream 里写死 pixiv 源站 IP
+        proxy_set_header Host $http_host;          # 保留真实 Host
+    }
+}
+upstream www-pixiv-net { server 210.140.131.223:443; ... }
+```
+
+**本质 = 本地反代 + 上游不发 SNI + 硬编码源站 IP**，用来分别对付「DNS 污染」和「SNI 关键词阻断」。
+
+### 9.1 这套东西本项目本来就支持
+
+| Pixiv-Nginx 的做法 | 本项目的等价配置 |
+| --- | --- |
+| 写死上游 IP | `ForwardDomainNames` 填 IP（= 服务端 `ForwardDomainIP`） |
+| `proxy_ssl_server_name` 关闭（不发 SNI） | `FakeServerName` 留空 → `TlsSniPattern.None` → SNI 为空 |
+| 需要时改发别的 SNI | `FakeServerName = "xxx"`（支持 `@domain`/`@ipaddress`/`@random`） |
+| 自签证书 | 内置根证书 `CN=SteamTools Certificate` + 按 SNI 现签叶子证书 |
+
+### 9.2 但它今天为什么不一定灵（2026-11 实测）
+
+用 Node 的 TLS 客户端逐个 IP / SNI 实测（本机直连，未走 FlClash）：
+
+```text
+项目                        IP                SNI                结果
+pixiv Cloudflare 前置       104.18.42.239     无 SNI             ECONNRESET
+pixiv Cloudflare 前置       104.18.42.239     www.pixiv.net      ECONNRESET     ← 按 SNI 精准阻断
+pixiv Cloudflare 前置       104.18.42.239     example.com        OK TLSv1.3 CN=example.com  ← SNI 换了就能握手
+pixiv 源站（Pixiv-Nginx 里写死的） 210.140.92.140   无 SNI / i.pximg.net  TIMEOUT  ← IP 层已封
+pixiv 源站                 210.140.131.223   无 SNI / www.pixiv.net TIMEOUT  ← IP 层已封
+GitHub 官配                 20.207.73.82      无 SNI / github.com   OK TLSv1.3 CN=github.com
+维基百科                    103.102.166.224   无 SNI / zh.wikipedia.org TIMEOUT
+```
+
+三点结论：
+
+1. **pixiv 确实存在 SNI 阻断**（`SNI=www.pixiv.net` 被 RST，换成 `example.com` 就握手成功）——你的判断是对的；
+2. 但**换成别的 SNI 只会连到别的站点**：Cloudflare 按 SNI 决定返回哪个证书/站点，所以拿不到 pixiv 的内容；
+3. 真正能让 Pixiv-Nginx 生效的是**源站 IP 可达**。当年 `210.140.x.x` 只是 SNI 被拦，如今这批 IP 从这条线路 TCP 都连不上（超时），所以同一份配置现在必然失败。
+
+### 9.3 那么今天该怎么让 pixiv / 维基可用
+
+必须有「一条能拿到真实内容、且可达」的路径，三选一：
+
+| 方案 | 做法 | 备注 |
+| --- | --- | --- |
+| 自建/现成反代 | 一台境外 nginx / Cloudflare Worker 反代 pixiv，把 `ForwardDomainNames` 指向它 | 等价于 Pixiv-Nginx，但把 nginx 放到了能连通源站的地方 |
+| 二级代理 | 客户端内置：设置 → 加速设置 → 二级代理，填本机 Http/SOCKS5 | 最省事，你机器上的 FlClash 就是现成的 |
+| 服务端中转 | `ProxyType=ServerAccelerate` + 一个能接受 `X-Watt-Origin-Dest-*` 头的中转服务 | 需要登录换令牌，官方列表里 greasyfork 就是这么配的 |
+
+实测可用的公共图片反代（仅图片，不含 API/登录）：
+`i.pixiv.re`、`pixiv.re`（Cloudflare `162.159.160.100`，TLS 正常）。
+但本项目的反代会保留原始 `Host: i.pximg.net`，与这类按 Host 路由的公共反代未必兼容——要不要接，建议你自己验证后再写进 [LocalAccelerateProjects]。
