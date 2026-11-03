@@ -92,7 +92,7 @@ res/                        # 图标、品牌图、截图
 build/                      # Linux 用户侧运行脚本（随产物分发）+ 过时的 macOS/AOT 脚本
 packaging/                  # ⚠️ 全部是 v2/v1 遗留，已失效
 doc/                        # file-system.md、publish.md、program-file-structure/（Windows.md 是空文件）
-.github/workflows/          # dotnet.yml = 构建+测试（Win/Linux；macOS advisory）、publish.yml = 未签名预览包
+.github/workflows/          # dotnet.yml = 构建+测试（Win/Linux）、macos.yml = macOS（手动/定时，需 Xcode 27）、publish.yml = 未签名预览包
 ```
 
 ---

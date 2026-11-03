@@ -1,0 +1,56 @@
+name: macOS build (manual)
+
+# 单独成文件的原因：
+#   1) macOS runner 排队时间长，放在 Build 工作流里会让每次 push 的检查长时间 pendings；
+#   2) .NET 11 的 macOS SDK 要求 Xcode 27.0，而托管 runner 目前只有 Xcode 26.6，
+#      error: This version of .NET for macOS requires Xcode 27.0 —— 因此在 runner 升级前必然失败。
+# 等 GitHub 托管镜像带上 Xcode 27（或改用自建 runner）后，把 on 里的 workflow_dispatch 改成 push/pull_request 即可并入主流程。
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 每周一 03:00 UTC 跑一次，用来观察 runner 镜像是否已经支持
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  NUGET_CERT_REVOCATION_MODE: offline
+
+jobs:
+  macos:
+    name: macOS / net11.0-macos
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup .NET 11 (GA)
+        id: dotnet-ga
+        uses: actions/setup-dotnet@v4
+        continue-on-error: true
+        with:
+          dotnet-version: 11.0.x
+
+      - name: Setup .NET 11 (preview fallback)
+        if: steps.dotnet-ga.outcome == 'failure'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
+
+      - name: Show Xcode version
+        run: xcodebuild -version || true
+
+      - name: Restore workloads
+        run: dotnet workload restore src/BD.WTTS.Client.Avalonia.App/BD.WTTS.Client.Avalonia.App.csproj
+
+      - name: Build main app
+        run: dotnet build src/BD.WTTS.Client.Avalonia.App/BD.WTTS.Client.Avalonia.App.csproj -c Release -f net11.0-macos --nologo
