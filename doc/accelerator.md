@@ -355,3 +355,26 @@ GitHub 官配                 20.207.73.82      无 SNI / github.com   OK TLSv1.
 
 另一个观察：GitHub 官配 IP `20.207.73.82` 的 TCP 连接 3 次里会有 1 次超时，但 TLS 握手正常——
 所以官方列表给同一入口配多个 IP 是必要的，客户端应按 IP 轮询重试。
+
+### 9.9 补充：pixiv 封的是「关键词」，不是具体域名
+
+同一时刻、同一批 IP，只换 SNI（每个 IP 都重复验证）：
+
+```text
+104.18.42.239    example.com=OK CN=example.com  |  www.pixiv.net=ECONNRESET  |  foo.pixiv.net=ECONNRESET
+103.21.244.5     example.com=OK CN=example.com  |  www.pixiv.net=ECONNRESET  |  foo.pixiv.net=ECONNRESET
+172.64.145.17    example.com=OK CN=example.com  |  www.pixiv.net=ECONNRESET  |  foo.pixiv.net=ECONNRESET
+162.159.160.100  example.com=OK CN=example.com  |  www.pixiv.net=ECONNRESET  |  foo.pixiv.net=ECONNRESET
+```
+
+`foo.pixiv.net` 是**不存在**的名字，照样被重置 → 判据是 ClientHello 里的字符串 `pixiv`，与域名解析、与目的地 IP 都无关。
+
+所以 pixiv 的死结是：
+
+1. 想拿到内容 → Cloudflare 必须收到 `*.pixiv.net` 的 SNI；
+2. 一发出含 `pixiv` 的 SNI → 无论连哪个 CF IP 都被 RST；
+3. 不发 SNI / 换别家 SNI → Cloudflare 直接 `handshake_failure` 或 `403`。
+
+**这不是「缺 IP」，而是「缺一条能发出真实 SNI 的通道」** —— 只能靠中转解决。
+
+> TLS 分片（byedpi / zapret 路线）本轮未能得到干净结论：本地转发代理本身有问题（对照组也不通），需要更严谨的实现或直接用现成工具验证，暂记为「未验证」。
