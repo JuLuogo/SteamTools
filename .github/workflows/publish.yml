@@ -67,7 +67,9 @@ jobs:
             nuget-${{ runner.os }}-
 
       - name: Publish (win-x64)
-        run: dotnet publish ${{ env.PROJECT }} -c Release -f ${{ env.TFM }} -r win-x64 --self-contained false -p:DebugType=none -o out/win-x64 --nologo
+        # -p:GeneratePackageOnBuild=false：ref/ 下部分资源工程（WTTS.Public 等）默认边构建边打 NuGet 包，
+        #   在 publish 图里会因 NU5017（无依赖也无内容）失败，这里显式关掉。
+        run: dotnet publish ${{ env.PROJECT }} -c Release -f ${{ env.TFM }} -r win-x64 --self-contained false -p:DebugType=none -p:GeneratePackageOnBuild=false -o out/win-x64 --nologo
 
       - name: Package
         shell: pwsh
