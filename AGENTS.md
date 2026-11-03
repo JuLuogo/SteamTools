@@ -441,6 +441,7 @@ src/BD.WTTS.Client.Tools.Publish/bin/Release/net11.0/pub.exe run --rids win-x64
 | 插件契约 | `src/BD.WTTS.Client/Plugins/Abstractions/IPlugin.cs`、`PluginBase.cs` |
 | 用户数据目录 | `doc/file-system.md` + `src/BD.WTTS.Client/FileSystem/` |
 | 子模块镜像 / 上游同步 | `doc/submodule-mirror.md` |
+| 加速器原理 / 域名清单 | `doc/accelerator.md` |
 | 产物目录结构 | `doc/program-file-structure/{Linux,macOS}.md`（Windows.md 为空，看 `pub` 源码） |
 | 发布编排 | `src/BD.WTTS.Client.Tools.Publish/Commands/**` |
 | 集中包版本 | `ref/DirectoryPackages/Directory.Packages.props` |
