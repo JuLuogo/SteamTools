@@ -275,3 +275,51 @@ GitHub 官配                 20.207.73.82      无 SNI / github.com   OK TLSv1.
 实测可用的公共图片反代（仅图片，不含 API/登录）：
 `i.pixiv.re`、`pixiv.re`（Cloudflare `162.159.160.100`，TLS 正常）。
 但本项目的反代会保留原始 `Host: i.pximg.net`，与这类按 Host 路由的公共反代未必兼容——要不要接，建议你自己验证后再写进 [LocalAccelerateProjects]。
+
+### 9.4 「换一个 Cloudflare 优选 IP」能不能救回 pixiv？（2026-11 实测：不能）
+
+取 Cloudflare 官方 `GET /client/v4/ips` 的 15 个 IPv4 段，每段取一个地址，用 **真实 SNI `www.pixiv.net`** 握手：
+
+```text
+173.245.48.5 TIMEOUT      103.21.244.5 ECONNRESET    103.22.200.5 TIMEOUT
+103.31.4.5   ECONNRESET   141.101.64.5 TIMEOUT      108.162.192.5 ECONNRESET
+190.93.240.5 TIMEOUT      188.114.96.5 ECONNRESET    197.234.240.5 TIMEOUT
+198.41.128.5 TIMEOUT      162.158.0.5  TIMEOUT       104.16.0.5   ECONNRESET
+104.24.0.5   ECONNRESET   172.64.0.5   TIMEOUT       131.0.72.5   TIMEOUT
+→ 15/15 失败，可用数 = 0
+
+对照组（同样这些 IP，换成 example.com 的 SNI）：
+  103.21.244.5   SNI=example.com → OK TLSv1.3 CN=example.com
+  104.18.42.239  SNI=example.com → OK TLSv1.3 CN=example.com
+  104.16.0.5     SNI=example.com → ECONNRESET（这个 IP 本身也不通）
+```
+
+→ **阻断判据是 SNI 里的关键词，不是目的地 IP**，所以「优选 IP」对 pixiv 无效。
+
+另外三条路也一并验证过：
+
+| 尝试 | 结果 | 原因 |
+| --- | --- | --- |
+| 不发 SNI（对应 `FakeServerName` 留空） | 全部 `SSLV3_ALERT_HANDSHAKE_FAILURE` | Cloudflare 必须靠 SNI 选证书和路由 |
+| SNI=example.com + `Host: www.pixiv.net` | `403 Forbidden` | CF 按 SNI 路由到 example.com，拒绝陌生 Host |
+| ECH（加密 SNI） | 无 | `www.pixiv.net` 的 HTTPS 记录为空，pixiv 没开 ECH |
+
+### 9.5 公共图片反代 `i.pixiv.re` 的兼容性（实测）
+
+```text
+162.159.160.100  SNI=i.pixiv.re  Host=i.pixiv.re   GET /img-original/... → 404（路由通）
+162.159.160.100  SNI=i.pixiv.re  Host=i.pximg.net  GET /img-original/... → 403 Forbidden
+```
+
+→ 该反代要求 `Host` 必须是它自己的域名；而本项目的反代会**保留原始 Host**（`ReverseProxyHttpClientHandler.cs` 中 `request.Headers.Host = uri.Authority`），
+所以**不能直接接**——除非给加速项目增加「Host 改写」字段（`AccelerateProjectDTO` 在 `ref/` 子模块里，改动要动上游 DTO）。
+
+### 9.6 结论与可落地路径
+
+| 路径 | 可行性 | 代价 |
+| --- | --- | --- |
+| 自建域名 + Cloudflare Worker / 境外 nginx 反代 pixiv，再把它填进 `ForwardDomainNames` | ✅ 唯一能「直连体验」的方案 | 需要你自己有个域名（CF 免费套餐即可） |
+| 二级代理（FlClash 等） | ✅ 立刻可用 | 依赖本地代理常开 |
+| 服务端中转 `ServerAccelerate` | ✅ 理论可行 | 需登录换令牌 + 服务端支持 |
+| 换 Cloudflare 优选 IP | ❌ | 阻断在 SNI，与 IP 无关 |
+| 接公共图片反代 | ⚠️ 存档 | 需先给客户端加 Host 改写能力 |
