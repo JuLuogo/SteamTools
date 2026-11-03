@@ -426,3 +426,70 @@ GitHub 官配                 20.207.73.82      无 SNI / github.com   OK TLSv1.
 | 维基百科（IP 层封锁，需反代） | wikipedia.org / wikimedia.org | — | — |
 
 > ⚠️ 这些 IP 是**某一时刻**的实测结果，会随 CDN 调度变化；失效时表现为该条目资源加载失败，单独取消勾选即可，不影响其它条目。
+
+---
+
+## 11. 全量巡检：GFW 列表抽样 170 个域名（2026-11）
+
+### 11.1 方法
+
+1. 取 [gfwlist](https://gitlab.com/gfwlist/gfwlist) 解码，归并到 3985 个可注册域名；
+2. 抽取 170 个（60 个知名站点 + 每 26 个取 1 的系统抽样）；
+3. 通过系统代理走 DoH 取**真实 IP**（避开 DNS 污染）；
+4. **直连**（不走代理）逐一测试：TCP 443 → 真实 SNI 握手 → 中性 SNI(`example.com`) 握手；
+5. 对「仅 SNI 被封」的再补一步：中性 SNI + `Host: 原域名` 发 HTTP 请求，看状态码。
+
+### 11.2 总体分布
+
+| 类别 | 数量 | 含义 |
+| --- | --- | --- |
+| A 直连可用 | 58 | 真实 SNI 就能握手 |
+| B 仅 SNI 被封 | 40 | 换 SNI 可握手 |
+| C IP 全封 | 26 | TCP 都建不起来 |
+| D 握手失败 | 36 | TCP 通但两种 SNI 都失败 |
+
+### 11.3 B 类里「换 SNI + 原 Host」真能用的（20/40）
+
+```text
+eyny.com 200 | onion.ly 302 | duckduckgo.com 200 | freegpt.es 200 | nyaa.si 200
+instagram.com 301 | docker.com 301 | caus.com 200 | rfi.fr 301 | annas-archive.gd 200
+facebook.com 301 | onedrive.live.com 302 | twitch.tv 301 | pixiv.net 301(→www)
+amazon.co.jp 301 | ned.org 301 | dm530.net 200 | dropbox.com 301
+bloomberg.com 301 | cnn.com 301
+```
+
+失败的 20 个全是 **403 Forbidden**（Cloudflare 或 Meta 边缘按 SNI 路由，Host 不匹配就拒），例如：
+`economist.com`、`medium.com`、`vimeo.com`、`signal.org`、`forbes.com`、`reuters.com`(HTTP/1.0 301 但需校验)、`mega.nz`(超时)、`whatsapp.com`(close_notify)。
+
+### 11.4 已接入本地覆盖层（且**不写死 IP**）
+
+> 关键改进：这类条目留空 `ForwardDomainNames`，让反代用 DoH 解析原域名，再用 `FakeServerName` 发中性 SNI。
+> 好处是 CDN 换 IP 也不失效；代价是依赖内置 DoH 能解析出真实 IP（本仓库的 `DnsDohAnalysisService` 就是干这个的）。
+
+| 条目 | 域名 |
+| --- | --- |
+| Pixiv 图片 | `i.pximg.net;s.pximg.net;i-cf.pximg.net` |
+| DuckDuckGo | `duckduckgo.com;www.duckduckgo.com;duck.com` |
+| Proton | `proton.me;www.proton.me;account.proton.me` |
+| Instagram | `instagram.com;www.instagram.com;i.instagram.com;cdninstagram.com;fbcdn.net` |
+| Facebook | `facebook.com;www.facebook.com;m.facebook.com;web.facebook.com;fb.com` |
+| Twitch | `twitch.tv;www.twitch.tv;m.twitch.tv` |
+| Docker | `docker.com;www.docker.com;docs.docker.com;hub.docker.com;registry-1.docker.io` |
+| Dropbox | `dropbox.com;www.dropbox.com;dl.dropboxusercontent.com` |
+| OneDrive | `onedrive.live.com;1drv.ms;skyapi.onedrive.live.com` |
+| Amazon 日本 | `amazon.co.jp;www.amazon.co.jp` |
+| CNN | `cnn.com;www.cnn.com;edition.cnn.com;cnnindonesia.com` |
+| Bloomberg | `bloomberg.com;www.bloomberg.com` |
+| RFI 法国国际广播 | `rfi.fr;www.rfi.fr;cdn.rfi.fr` |
+| Pixiv 主站（需 Worker） | pixiv 全站域名 |
+| 维基百科（需反代） | wikipedia/wikimedia 全站域名 |
+
+### 11.5 仍未解的
+
+| 站点 | 原因 | 唯一出路 |
+| --- | --- | --- |
+| **pixiv 主站** | 挂 Cloudflare，按 SNI 路由；源站 `210.140.139.x` 全部 403/421 不服务 www | 自建 Worker / 反代 |
+| **维基百科正文** | 文本节点 208.80.x / 103.102.x / 198.35.26.x / 185.15.56.x 的 TLS 全部失败 | 自建 Worker / 反代 |
+| Google / YouTube / Twitch(部分) / Telegram / BBC / archive.org | TCP 层就封死 | 只能中转 |
+
+> 注：`twitch.tv` 在 A/B 测试里表现不一致（B 类 + Host 路由 301 可用），实际可用性取决于当期线路。

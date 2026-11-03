@@ -129,25 +129,27 @@ partial class ProxyService
             "steamserver.net";
 
         /// <summary>
-        /// 实测「换 SNI + 保留原 Host」可直接拿到内容的站点（2026-11 实测 200 OK）。
-        /// <para>原理：这些站点按 HTTP Host 路由，不按 TLS SNI 路由；
-        /// 所以把 SNI 换成一个未被封锁的名字，就能绕过 SNI 关键词阻断。</para>
-        /// <para>⚠️ 必须同时设置 <c>FakeServerName</c> 与 <c>IgnoreSSLCertVerification</c>。</para>
+        /// 实测「换中性 SNI + 保留原 Host」可直接拿到内容的站点（2026-11 批量巡检）。
+        /// <para>⚠️ 这类条目【不写死 IP】：留空 ForwardDomainNames，让反代用 DoH 解析原域名，
+        /// 再用 FakeServerName 发中性 SNI；站点按 Host 路由，因此能拿到正确内容，且不受 CDN 换 IP 影响。</para>
         /// </summary>
         const string NeutralSni = "example.com";
 
-        /// <summary>Pixiv 图片源站（实测 200 OK，无需反代）。</summary>
+        /// <summary>Pixiv 图片源站（实测 200 OK，无需 Worker）。</summary>
         const string PixivImageDomains = "i.pximg.net;s.pximg.net;i-cf.pximg.net";
-        const string PixivImageIp = "210.140.139.130";
 
         const string DuckDuckGoDomains = "duckduckgo.com;www.duckduckgo.com;duck.com";
-        const string DuckDuckGoIp = "20.43.161.105";
-
         const string ProtonDomains = "proton.me;www.proton.me;account.proton.me";
-        const string ProtonIp = "185.70.42.45";
-
-        const string InstagramDomains = "instagram.com;www.instagram.com;i.instagram.com";
-        const string InstagramIp = "57.144.64.34";
+        const string InstagramDomains = "instagram.com;www.instagram.com;i.instagram.com;cdninstagram.com;fbcdn.net";
+        const string FacebookDomains = "facebook.com;www.facebook.com;m.facebook.com;web.facebook.com;fb.com";
+        const string TwitchDomains = "twitch.tv;www.twitch.tv;m.twitch.tv";
+        const string DockerDomains = "docker.com;www.docker.com;docs.docker.com;hub.docker.com;registry-1.docker.io";
+        const string DropboxDomains = "dropbox.com;www.dropbox.com;dl.dropboxusercontent.com";
+        const string OneDriveDomains = "onedrive.live.com;1drv.ms;skyapi.onedrive.live.com";
+        const string AmazonJpDomains = "amazon.co.jp;www.amazon.co.jp";
+        const string CnnDomains = "cnn.com;www.cnn.com;edition.cnn.com;cnnindonesia.com";
+        const string BloombergDomains = "bloomberg.com;www.bloomberg.com";
+        const string RfiDomains = "rfi.fr;www.rfi.fr;cdn.rfi.fr";
 
         /// <summary>
         /// Pixiv 主站域名。⚠️ 主站挂在 Cloudflare 上，按 SNI 路由，
@@ -159,7 +161,7 @@ partial class ProxyService
             "oauth.secure.pixiv.net";
 
         /// <summary>
-        /// 维基百科/维基媒体的常用域名。⚠️ 同 Pixiv，需要二级代理。
+        /// 维基百科/维基媒体的常用域名。⚠️ 当前网络下文本节点 IP 层被阻断，只能靠反代。
         /// <para>说明：hosts 模式无法写通配，因此这里枚举常用语种与共享资源域名；
         /// 其它语种（如 fr/ru/es）可在 System/PAC 模式下由 <c>*.wikipedia.org</c> 规则覆盖。</para>
         /// </summary>
@@ -180,10 +182,19 @@ partial class ProxyService
                 Item("Steam 静态补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9003", SteamStaticSupplementDomains, "steamstatic.rmbgame.net"),
                 Item("Steam 下载补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9004", SteamDownloadSupplementDomains, "steammedia.rmbgame.net")),
             Group("其他网站（本地）", 9002,
-                Item("Pixiv 图片（直连源站）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9101", PixivImageDomains, PixivImageIp, NeutralSni, true),
-                Item("DuckDuckGo（换 SNI 直连）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9104", DuckDuckGoDomains, DuckDuckGoIp, NeutralSni, true),
-                Item("Proton（换 SNI 直连）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9105", ProtonDomains, ProtonIp, NeutralSni, true),
-                Item("Instagram（换 SNI 直连）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9106", InstagramDomains, InstagramIp, NeutralSni, true),
+                Item("Pixiv 图片（直连源站）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9101", PixivImageDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
+                Item("DuckDuckGo", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9104", DuckDuckGoDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
+                Item("Proton", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9105", ProtonDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
+                Item("Instagram", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9106", InstagramDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
+                Item("Facebook", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9107", FacebookDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
+                Item("Twitch", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9108", TwitchDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
+                Item("Docker", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9109", DockerDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
+                Item("Dropbox", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910a", DropboxDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
+                Item("OneDrive", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910b", OneDriveDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
+                Item("Amazon 日本", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910c", AmazonJpDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
+                Item("CNN", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910d", CnnDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
+                Item("Bloomberg", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910e", BloombergDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
+                Item("RFI 法国国际广播", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910f", RfiDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
                 Item("Pixiv 主站（需自建 Worker 反代）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", PixivDomains, ignoreSslCertVerification: true),
                 Item("维基百科（IP 层封锁，需反代）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9103", WikipediaDomains, ignoreSslCertVerification: true)),
         };
