@@ -29,10 +29,20 @@ sealed class ReverseProxyHttpClientHandler : DelegatingHandler
         var uri = request.RequestUri ??
             throw new ApplicationException("The requested URI must be specified.");
 
+        // 路径前缀中转：ForwardDomainNames 为绝对 URL（如 https://w.peroe.com/pixiv）时，
+        // 把 原始 https://www.pixiv.net/a/b?x=1  改写成  https://w.peroe.com/pixiv/a/b?x=1。
+        // 这样只需一个中转域名 + 路径前缀即可承载任意多个站点，Host 与 SNI 都变成中转域名。
+        var pathPrefixBase = TryGetPathPrefixBase(domainConfig.ForwardDestination);
+        if (pathPrefixBase != null)
+        {
+            uri = BuildPathPrefixedUri(uri, pathPrefixBase);
+            request.RequestUri = uri;
+        }
+
         // 请求上下文信息
         var isHttps = uri.Scheme == Uri.UriSchemeHttps;
         var tlsSniValue = domainConfig.GetTlsSniPattern().WithDomain(uri.Host).WithRandom();
-        request.SetRequestContext(new RequestContext(isHttps, tlsSniValue));
+        request.SetRequestContext(new RequestContext(isHttps, tlsSniValue, pathPrefixBase != null));
 
         // Preserve a non-default port in the forwarded Host header.
         request.Headers.Host = uri.Authority;
@@ -45,6 +55,37 @@ sealed class ReverseProxyHttpClientHandler : DelegatingHandler
             return await base.SendAsync(request, linkedTokenSource.Token);
         }
         return await base.SendAsync(request, cancellationToken);
+    }
+
+    /// <summary>
+    /// 若转发目标是绝对 URL，取出它的基地址（用于「路径前缀中转」）。
+    /// </summary>
+    static Uri? TryGetPathPrefixBase(string? forwardDestination)
+    {
+        if (string.IsNullOrWhiteSpace(forwardDestination))
+            return null;
+        if (!forwardDestination.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            && !forwardDestination.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return null;
+        return Uri.TryCreate(forwardDestination, UriKind.Absolute, out var uri) ? uri : null;
+    }
+
+    /// <summary>
+    /// 把原始请求路径拼到中转地址的路径前缀后面。
+    /// <para>例：<c>https://w.peroe.com/pixiv</c> + <c>https://www.pixiv.net/ranking.php?mode=daily</c>
+    /// → <c>https://w.peroe.com/pixiv/ranking.php?mode=daily</c></para>
+    /// </summary>
+    static Uri BuildPathPrefixedUri(Uri original, Uri pathPrefixBase)
+    {
+        var prefix = pathPrefixBase.AbsolutePath.TrimEnd('/');
+        var builder = new UriBuilder(original)
+        {
+            Scheme = pathPrefixBase.Scheme,
+            Host = pathPrefixBase.Host,
+            Port = pathPrefixBase.Port,
+            Path = prefix + original.AbsolutePath,
+        };
+        return builder.Uri;
     }
 
     /// <summary>
@@ -180,7 +221,8 @@ sealed class ReverseProxyHttpClientHandler : DelegatingHandler
         var credentials = webProxy.Credentials as NetworkCredential;
         var userId = credentials?.UserName ?? string.Empty;
 
-        var destinationAddress = await GetIPEndPointsAsync(context.DnsEndPoint, cancellationToken)
+        var skipForwardDestination = context.InitialRequestMessage.GetRequestContext().IsPathPrefixProxy;
+        var destinationAddress = await GetIPEndPointsAsync(context.DnsEndPoint, skipForwardDestination, cancellationToken)
             .Where(x => x.AddressFamily == AddressFamily.InterNetwork).FirstAsync(cancellationToken);
         var userBytes = Encoding.ASCII.GetBytes(userId);
         var request = new byte[9 + userBytes.Length];
@@ -302,7 +344,9 @@ sealed class ReverseProxyHttpClientHandler : DelegatingHandler
         }
 
         var innerExceptions = new List<Exception>();
-        var ipEndPoints = GetIPEndPointsAsync(context.DnsEndPoint, cancellationToken);
+        // 路径前缀中转时，DnsEndPoint 已经是中转域名，且 ForwardDestination 是绝对 URL（不能当主机名解析）。
+        var isPathPrefixProxy = context.InitialRequestMessage.GetRequestContext().IsPathPrefixProxy;
+        var ipEndPoints = GetIPEndPointsAsync(context.DnsEndPoint, isPathPrefixProxy, cancellationToken);
 
         await foreach (var ipEndPoint in ipEndPoints)
         {
@@ -389,7 +433,7 @@ sealed class ReverseProxyHttpClientHandler : DelegatingHandler
     /// <param name="dnsEndPoint"></param>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
-    async IAsyncEnumerable<IPEndPoint> GetIPEndPointsAsync(DnsEndPoint dnsEndPoint, [EnumeratorCancellation] CancellationToken cancellationToken)
+    async IAsyncEnumerable<IPEndPoint> GetIPEndPointsAsync(DnsEndPoint dnsEndPoint, bool skipForwardDestination, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (IPAddress.TryParse(dnsEndPoint.Host, out var address))
         {
@@ -397,12 +441,12 @@ sealed class ReverseProxyHttpClientHandler : DelegatingHandler
         }
         else
         {
-            if (domainConfig.IPAddress != null)
+            if (!skipForwardDestination && domainConfig.IPAddress != null)
             {
                 yield return new IPEndPoint(domainConfig.IPAddress, dnsEndPoint.Port);
             }
 
-            if (domainConfig.ForwardDestination != null)
+            if (!skipForwardDestination && domainConfig.ForwardDestination != null)
             {
                 await foreach (var item in domainResolver.ResolveAsync(new DnsEndPoint(domainConfig.ForwardDestination, dnsEndPoint.Port), cancellationToken))
                 {

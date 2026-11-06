@@ -615,99 +615,102 @@ const string SelfHostedReverseProxyHost = "proxy.example.com";
 
 ---
 
-## 14. 用 Cloudflare Worker 承接中转：能做什么、不能做什么
+## 14. 单域名 + 路径前缀中转（`w.example.com/pixiv/...`）
 
-### 14.1 硬限制：Worker 只能看到「自己域名」的请求
-
-本项目的反代转发时保留原始 `Host`（`request.Headers.Host = uri.Authority`），一切靠 Host 说明目标。
-但 Cloudflare 的边缘是**按 Host 分流**的：
+这是**只需要一个中转域名**的方案：所有站点都发到同一个域名，靠 **URL 路径前缀**区分目标。
 
 ```text
-SNI = p.example.com（你的证书）
-Host: www.pixiv.net   ← 浏览器/本地代理带过来的原始 Host
+浏览器请求            https://www.pixiv.net/ranking.php?mode=daily
+  ↓ 本地反代拦截(hosts)
+转发到中转端          https://w.example.com/pixiv/ranking.php?mode=daily
+  ↓ Worker/nginx 剥掉 /pixiv 前缀
+真实站点              https://www.pixiv.net/ranking.php?mode=daily
 ```
 
-CF 拿到这条请求后，会用 **Host** 去找对应的 zone；`www.pixiv.net` 不是你的 zone，
-请求根本不会进到你的 Worker；实测同一组合（SNI=example.com + Host=www.pixiv.net）直接 `403 Forbidden`。
+### 14.1 为什么必须用路径、不能只靠 Host
 
-**所以「一个域名 + 原始 Host」在 Cloudflare 上无法路由到 Worker。** 这不是配置问题，是 CF 的路由模型。
+本项目转发时保留原始 `Host`，但 Cloudflare 边缘是**按 Host 分流**的：
+`Host: www.pixiv.net` 会被 CF 判给 pixiv 的 zone，请求根本进不到你的 Worker（实测同组合直接 403）。
+所以要让 CF 认账，目标信息就必须放进**它不参与路由的部分**——也就是 **URL 路径**。
 
-### 14.2 可行写法：把目标编码进子域（一条通配就够）
+### 14.2 客户端（本项目）需要做什么：已实现 URI 改写
 
-既然 CF 只认 Host，那就把目标放进 Host 本身：
+`ReverseProxyHttpClientHandler` 现在支持：当 `ForwardDomainNames` 是**绝对 URL** 时，
+自动把请求改写成「中转域名 + 路径前缀」：
 
 ```text
-www-pixiv-net.example.com   → www.pixiv.net
-zh-wikipedia-org.example.com→ zh.wikipedia.org
+原始  https://www.pixiv.net/a/b?x=1
+改写  https://w.example.com/pixiv/a/b?x=1      ← Host/SNI 一并变成 w.example.com
 ```
 
-配套只需要配**一次**：
+实现位置：`ReverseProxyHttpClientHandler.SendAsync` 里的 `TryGetPathPrefixBase` / `BuildPathPrefixedUri`；
+连接阶段会跳过「按原域名找 IP」的步骤（`RequestContext.IsPathPrefixProxy`）。
 
-| 项 | 配置 |
-| --- | --- |
-| DNS | `*.example.com` 指向 Cloudflare（一条通配记录） |
-| 证书 | 免费 Universal SSL 已覆盖 `*.example.com`（**只能一层**） |
-| Worker 路由 | `*.example.com/*`（一条） |
-| Worker 代码 | 一张「压平名 → 真实域名」映射表 |
+配置方式（`ProxyService.LocalAccelerate.cs`）：
 
-⚠️ 注意：`*.p.example.com`（二级通配）免费证书不覆盖，需要 Total TLS / 自定义证书；
-所以要把目标压平成**一级**子域（用 `-` 代替 `.`）。
+```csharp
+const string PathPrefixProxyBase = "https://w.example.com";   // ← 只改这一处
+```
 
-### 14.3 Worker 脚本
+之后 Pixiv 主站条目会自动变成：
+
+```csharp
+Item("Pixiv 主站（路径前缀中转）", "稳定Guid", PixivDomains,
+     "https://w.example.com/pixiv", "@domain");
+```
+
+其它站点同理，加一句 `PathPrefixItem("名字", "Guid", "域名列表", "slug")` 即可，**共用同一个域名**。
+
+### 14.3 Cloudflare Worker（按路径前缀分流）
 
 ```js
-// 目标压平到一级子域：www.pixiv.net -> www-pixiv-net.example.com
-const SUFFIX = ".example.com";
-const TARGETS = new Map([
-  ["www-pixiv-net",      "www.pixiv.net"],
-  ["pixiv-net",          "pixiv.net"],
-  ["accounts-pixiv-net", "accounts.pixiv.net"],
-  ["i-pximg-net",        "i.pximg.net"],
-  ["zh-wikipedia-org",   "zh.wikipedia.org"],
-]);
+// 路径前缀 → 目标站点；一个域名承载全部
+const ROUTES = {
+  pixiv:      "www.pixiv.net",
+  pixivimg:   "i.pximg.net",
+  wikipedia:  "zh.wikipedia.org",
+};
 
 export default {
   async fetch(request) {
     const url = new URL(request.url);
-    if (!url.hostname.endsWith(SUFFIX)) return new Response("bad host", { status: 400 });
+    const m = url.pathname.match(/^\/([a-z0-9_-]+)(\/.*)?$/i);
+    if (!m) return new Response("bad path", { status: 400 });
 
-    // 关键：白名单，避免变成开放代理（任何人都能拿它当跳板）
-    const label = url.hostname.slice(0, -SUFFIX.length);
-    const target = TARGETS.get(label);
-    if (!target) return new Response("target not allowed", { status: 403 });
+    const target = ROUTES[m[1].toLowerCase()];
+    if (!target) return new Response("route not allowed", { status: 403 });
 
     const upstream = new URL(request.url);
     upstream.protocol = "https:";
     upstream.hostname = target;
+    upstream.pathname = m[2] || "/";          // 剥掉前缀
 
     const headers = new Headers(request.headers);
     headers.delete("host");
-    // 目标站点若校验来源，可在这里补 Referer/Origin
+    headers.set("Referer", "https://" + target + "/");  // 有些站点（如 pximg）校验来源
 
     return fetch(upstream.toString(), {
       method: request.method,
       headers,
       body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
-      redirect: "manual",   // 跳转原样交给浏览器，由加速器再拦截目标子域
+      redirect: "manual",   // 跳转原样回给浏览器，再由本地反代拦截
     });
   }
 };
 ```
 
-### 14.4 加速器里怎么填
+### 14.4 与子域编码方案的对比
 
-```csharp
-Item("Pixiv 主站", "稳定Guid",
-     "pixiv.net;www.pixiv.net;accounts.pixiv.net",
-     forwardDomainNames: "www-pixiv-net.example.com",   // 通配子域
-     serverName:        "www-pixiv-net.example.com",    // 必须一致，否则证书不匹配
-     ignoreSslCertVerification: false);                 // 有真证书就不用忽略
-```
+| 方案 | 域名数量 | 证书 | 每个站点新增成本 |
+| --- | --- | --- | --- |
+| **单域名 + 路径前缀（本节，推荐）** | 1 | 普通证书即可 | Worker 路由表 1 行 + 客户端 1 行 |
+| 子域编码 `www-pixiv-net.example.com` | 1 个通配 | 免费证书只覆盖一层通配 | Worker 映射 1 行 + 客户端 1 行 |
+| VPS + nginx `server_name _` | 1 | 自签即可 | 客户端 1 行（不用改服务端） |
 
-### 14.5 一句话对比
+### 14.5 已知坑
 
-| 方案 | 一个域名接所有站点 | 每个站点要做的事 |
-| --- | --- | --- |
-| VPS + nginx `server_name _` | ✅ 真·一个域名 | 加速器加一条 |
-| **Cloudflare Worker + 通配子域** | ⚠️ 一条通配 DNS/路由 | Worker 映射表加一行 + 加速器加一条 |
-| Cloudflare Worker + 单一域名 | ❌ 不可能 | — |
+1. **重定向**：upstream 返回 `Location: https://www.pixiv.net/...` 时，浏览器会重新走一次本地反代（该域名已被拦截），所以没问题；
+   但如果站点跳到**没被拦截的子域**，就会直接断——把该子域也加进条目的域名列表。
+2. **绝对 URL 资源**：HTML/CSS 里的绝对地址指向原站域名，同样会被本地反代接管，无需 Worker 改写。
+3. **Cookie Domain**：站点下发 `.pixiv.net` 的 Cookie 时，浏览器按原域名存储（因为用户访问的就是原域名），不受影响。
+4. **别做成开放代理**：Worker 里的 `ROUTES` 白名单必须保留。

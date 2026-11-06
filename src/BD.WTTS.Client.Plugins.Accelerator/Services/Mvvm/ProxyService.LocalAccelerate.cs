@@ -179,14 +179,24 @@ partial class ProxyService
         const string WikipediaImageDomains = "upload.wikimedia.org;maps.wikimedia.org";
 
         /// <summary>
-        /// 你自己搭的「通用反代」域名，例如 <c>proxy.example.com</c>。填了它，所有需要中转的站点都复用这一个域名，
-        /// 不必为每个站点单独开子域。
-        /// <para>⚠️ 硬性前提：这个反代必须【不按 Host 做站点选择】，即接受任意 <c>Host</c> 头并按其转发
-        /// （nginx 用 <c>server_name _;</c> 的 default_server，或 Caddy/自写 Node、Go 反代）。
-        /// Cloudflare Worker / Vercel / Deno 都做不到——它们按 Hostname 路由，看到外来 Host 直接 403（已实测）。</para>
-        /// <para>留空则 Pixiv 主站条目保持「需自建反代」的占位状态。</para>
+        /// 单域名 + 路径前缀的「中转基地址」，例如 <c>https://w.peroe.com</c>。
+        /// <para>配好后：访问 <c>https://www.pixiv.net/a</c> 会被改写成 <c>https://w.peroe.com/pixiv/a</c>，
+        /// 由中转端（Cloudflare Worker / nginx / 自写服务）按【路径前缀】分流到真实站点。</para>
+        /// <para>好处：只需要一个域名，不需要为每个站点开子域；Cloudflare Worker 也能用（它按路径匹配，不看 Host）。</para>
+        /// <para>要求：中转端从 <c>/&lt;slug&gt;/...</c> 里剥掉前缀再转发，并把响应原样返回。</para>
+        /// <para>留空表示不启用，Pixiv 主站条目保持「需中转」的占位状态。</para>
         /// </summary>
-        const string SelfHostedReverseProxyHost = "";
+        const string PathPrefixProxyBase = "";
+
+        /// <summary>创建一个走「路径前缀中转」的条目；未配置基地址时返回 null。</summary>
+        static AccelerateProjectDTO? PathPrefixItem(string name, string id, string domains, string slug)
+        {
+            if (string.IsNullOrEmpty(PathPrefixProxyBase))
+                return null;
+            var forward = PathPrefixProxyBase.TrimEnd('/') + "/" + slug;
+            // serverName 用 @domain：改写后的 uri.Host 就是中转域名，SNI 自然等于它
+            return Item(name, id, domains, forward, "@domain");
+        }
 
         /// <summary>
         /// 需要合并进 <see cref="ProxyDomains"/> 的本地加速项目组（顺序即 UI 中的排序）。
@@ -207,7 +217,7 @@ partial class ProxyService
         /// <summary>
         /// 「其他网站（本地）」分组。
         /// <para>列在这里的条目：要么被实测证明可「换中性 SNI」直连，要么依赖可用的落地节点；
-        /// Pixiv 主站是唯一必须走中转的（见 <see cref="SelfHostedReverseProxyHost"/>）。</para>
+        /// Pixiv 主站是唯一必须走中转的（见 <see cref="PathPrefixProxyBase"/>）。</para>
         /// </summary>
         static AccelerateProjectGroupDTO CreateOtherSitesGroup()
         {
@@ -230,10 +240,9 @@ partial class ProxyService
                 Item("维基百科图片（指定节点）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9110", WikipediaImageDomains, WikipediaImageIp, NeutralSni, true),
             };
 
-            // Pixiv 主站：配了通用反代就走反代，否则留一个占位条目说明原因。
-            items.Add(string.IsNullOrEmpty(SelfHostedReverseProxyHost)
-                ? Item("Pixiv 主站（需自建通用反代）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", PixivDomains, ignoreSslCertVerification: true)
-                : Item("Pixiv 主站（走自建反代）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", PixivDomains, SelfHostedReverseProxyHost, SelfHostedReverseProxyHost, true));
+            // Pixiv 主站只能走中转：配了 PathPrefixProxyBase 就用「单域名 + 路径前缀」，否则留占位条目。
+            items.Add(PathPrefixItem("Pixiv 主站（路径前缀中转）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", PixivDomains, "pixiv")
+                ?? Item("Pixiv 主站（需自建中转：配 PathPrefixProxyBase）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", PixivDomains, ignoreSslCertVerification: true));
 
             return Group("其他网站（本地）", 9002, items.ToArray());
         }
