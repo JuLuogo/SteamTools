@@ -714,3 +714,51 @@ export default {
 2. **绝对 URL 资源**：HTML/CSS 里的绝对地址指向原站域名，同样会被本地反代接管，无需 Worker 改写。
 3. **Cookie Domain**：站点下发 `.pixiv.net` 的 Cookie 时，浏览器按原域名存储（因为用户访问的就是原域名），不受影响。
 4. **别做成开放代理**：Worker 里的 `ROUTES` 白名单必须保留。
+
+---
+
+## 15. 批量接入结果（2026-11 全量分类）
+
+### 15.1 分类方法（重要：必须先绕开本机代理）
+
+本机开着 FlClash 的 **TUN 模式**（默认路由 metric 0 指向 `Meta Tunnel`），
+此时**任何**直连测试都会成功——包括 Google/Telegram——分类结果全是假阳性。
+
+正确做法：把 socket 绑定到物理网卡的源地址（`localAddress = WLAN 的 IP`），绕开 TUN 再测：
+
+```js
+net.connect({ host: ip, port: 443, localAddress: "192.168.0.135" })
+```
+
+校验：Google/Telegram 立刻变 `TIMEOUT`、GitHub 官配 IP 仍 `TLS_OK` → 说明绕开成功。
+
+### 15.2 本次结果（459 个域名样本，404 个解析成功）
+
+| 类别 | 数量 | 含义 | 处理 |
+| --- | --- | --- | --- |
+| A | 154 | 真实 SNI 就能握手 | 直连（`serverName: "@domain"`） |
+| B | 100 | 仅 SNI 被封 | 换中性 SNI + 保留 Host |
+| C | 59 | TCP 建不起来 | 必须中转 |
+| D | 91 | 握手失败 | 必须中转 |
+
+### 15.3 已写入代码的三张表
+
+`ProxyService.LocalAccelerate.cs`：
+
+| 表 | 数量 | 生成方式 |
+| --- | --- | --- |
+| `RealSniSites` | 21 | `Item(name, NewId(name), domains, serverName: "@domain")` |
+| `SpoofedSniSites` | 7 | 同上 + `serverName: NeutralSni` + `ignoreSslCertVerification: true` |
+| `RelaySites` | 39 | 配置 `PathPrefixProxyBase` 后生成 `https://<base>/<slug>` 条目 |
+
+代表性结果：
+
+- **A（直连）**：CNN、AP、NPR、GitHub、Docker、npm、PyPI、Cloudflare、Vercel、DigitalOcean、Bitbucket、Box、Spotify、Netflix、Behance…
+- **B（换 SNI）**：Bloomberg、The Guardian、Pinterest、Tumblr、Dropbox、Facebook
+- **中转**：BBC、纽约时报、金融时报、WSJ、Forbes、经济学人、Reuters、德国之声、VOA、华盛顿邮报、Medium、Substack、GitLab、Stack Overflow、Archive.org、Reddit、Telegram、Discord、TikTok、Vimeo、SoundCloud、Proton、Signal、MEGA、DeviantArt、ArtStation、Twitch、YouTube、Google、X/Twitter、Instagram、WhatsApp、**Pixiv 主站**
+
+### 15.4 使用方式
+
+1. 只想要直连的：勾选「其他网站（本地）」里 A/B 两类条目即可（无需任何服务端）；
+2. 想连央视/推/YTB/Pixiv 这些：把 `PathPrefixProxyBase` 填成你的中转域名，重启后 `RelaySites` 会自动变成可勾选条目；
+3. 条目 Id 由 `NewId(名称)` 稳定派生，**改名会重置勾选状态**。

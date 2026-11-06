@@ -128,63 +128,125 @@ partial class ProxyService
             "steam-chat.com;" +
             "steamserver.net";
 
-        /// <summary>
-        /// 实测「换中性 SNI + 保留原 Host」可直接拿到内容的站点（2026-11 批量巡检）。
-        /// <para>⚠️ 这类条目【不写死 IP】：留空 ForwardDomainNames，让反代用 DoH 解析原域名，
-        /// 再用 FakeServerName 发中性 SNI；站点按 Host 路由，因此能拿到正确内容，且不受 CDN 换 IP 影响。</para>
-        /// </summary>
+        /// <summary>中性 SNI：用于绕过「SNI 关键词阻断」，站点按 Host 路由时不影响内容。</summary>
         const string NeutralSni = "example.com";
 
-        /// <summary>Pixiv 图片源站（实测 200 OK，无需 Worker）。</summary>
+        // —— 必须写死落地节点的条目（DoH 解析到的节点不可达） ——
+
+        /// <summary>Pixiv 图片源站（实测 200 OK）。</summary>
         const string PixivImageDomains = "i.pximg.net;s.pximg.net;i-cf.pximg.net";
 
-        const string DuckDuckGoDomains = "duckduckgo.com;www.duckduckgo.com;duck.com";
-        const string ProtonDomains = "proton.me;www.proton.me;account.proton.me";
-        const string InstagramDomains = "instagram.com;www.instagram.com;i.instagram.com;cdninstagram.com;fbcdn.net";
-        const string FacebookDomains = "facebook.com;www.facebook.com;m.facebook.com;web.facebook.com;fb.com";
-        const string TwitchDomains = "twitch.tv;www.twitch.tv;m.twitch.tv";
-        const string DockerDomains = "docker.com;www.docker.com;docs.docker.com;hub.docker.com;registry-1.docker.io";
-        const string DropboxDomains = "dropbox.com;www.dropbox.com;dl.dropboxusercontent.com";
-        const string OneDriveDomains = "onedrive.live.com;1drv.ms;skyapi.onedrive.live.com";
-        const string AmazonJpDomains = "amazon.co.jp;www.amazon.co.jp";
-        const string CnnDomains = "cnn.com;www.cnn.com;edition.cnn.com;cnnindonesia.com";
-        const string BloombergDomains = "bloomberg.com;www.bloomberg.com";
-        const string RfiDomains = "rfi.fr;www.rfi.fr;cdn.rfi.fr";
-
-        /// <summary>
-        /// Pixiv 主站域名。⚠️ 主站挂在 Cloudflare 上，按 SNI 路由，
-        /// 换 SNI 只会拿到 403，因此必须用一个自己的 Worker / 反代域名来承接（见 doc/accelerator.md §9.6）。
-        /// </summary>
-        const string PixivDomains =
-            "pixiv.net;www.pixiv.net;accounts.pixiv.net;source.pixiv.net;sketch.pixiv.net;" +
-            "dic.pixiv.net;comic.pixiv.net;novel.pixiv.net;fanbox.pixiv.net;payment.pixiv.net;" +
-            "oauth.secure.pixiv.net";
-
-        /// <summary>
-        /// 维基百科正文。⚠️ 维基的文本节点默认不可达，必须指定实测可用的落地节点 + 中性 SNI。
-        /// <para>实测：185.15.58.224 稳定可用（3/4 成功）、195.200.68.224 备用（1/4）；
-        /// 185.15.59.224 与 103.102.166.x / 208.80.153-154.x 当前不通。</para>
-        /// <para>图片走 <c>upload.wikimedia.org</c> 单独一条（节点不同，该节点对它返回 421）。</para>
-        /// </summary>
+        /// <summary>维基百科正文节点：185.15.58.224 稳定、195.200.68.224 备用。</summary>
         const string WikipediaIp = "185.15.58.224";
-
         const string WikipediaDomains =
             "wikipedia.org;www.wikipedia.org;zh.wikipedia.org;en.wikipedia.org;ja.wikipedia.org;" +
             "zh.m.wikipedia.org;en.m.wikipedia.org;" +
             "wikimedia.org;commons.wikimedia.org;meta.wikimedia.org;" +
             "api.wikimedia.org;login.wikimedia.org;donate.wikimedia.org;species.wikimedia.org";
 
-        /// <summary>维基共享资源图片节点（实测对任意 SNI 都返回真实内容）。</summary>
+        /// <summary>维基共享资源图片节点。</summary>
         const string WikipediaImageIp = "208.80.154.240";
         const string WikipediaImageDomains = "upload.wikimedia.org;maps.wikimedia.org";
+
+        const string DuckDuckGoDomains = "duckduckgo.com;www.duckduckgo.com;duck.com";
+        const string OneDriveDomains = "onedrive.live.com;1drv.ms;skyapi.onedrive.live.com";
+        const string AmazonJpDomains = "amazon.co.jp;www.amazon.co.jp";
+
+        // —— 分类结果（2026-11 实测，已绕过本机 TUN/proxy 的直连路径） ——
+
+        /// <summary>直连可用且【不需要伪装 SNI】的站点（A 类：用真实 SNI 就能握手）。</summary>
+        static readonly (string Name, string Domains)[] RealSniSites =
+        {
+            ("CNN", "cnn.com;www.cnn.com;edition.cnn.com"),
+            ("AP News", "apnews.com"),
+            ("NPR", "npr.org"),
+            ("Ameba 博客", "ameblo.jp"),
+            ("Naver", "naver.com"),
+            ("GitHub", "github.com"),
+            ("Docker", "docker.com"),
+            ("npm", "npmjs.com"),
+            ("PyPI", "pypi.org"),
+            ("Cloudflare", "cloudflare.com"),
+            ("Vercel", "vercel.com"),
+            ("DigitalOcean", "digitalocean.com"),
+            ("Bitbucket", "bitbucket.org"),
+            ("SourceForge", "sourceforge.net"),
+            ("Box", "box.com"),
+            ("Spotify", "spotify.com"),
+            ("LastPass", "lastpass.com"),
+            ("1Password", "1password.com"),
+            ("Pixiv 图片域名", "pximg.net"),
+            ("Behance", "behance.net"),
+            ("Netflix", "netflix.com"),
+        };
+
+        /// <summary>直连可用但【SNI 被关键词阻断】的站点（B 类：换中性 SNI + 保留原 Host 即可）。</summary>
+        static readonly (string Name, string Domains)[] SpoofedSniSites =
+        {
+            ("Bloomberg", "bloomberg.com;www.bloomberg.com"),
+            ("The Guardian", "theguardian.com;www.theguardian.com"),
+            ("Pinterest", "pinterest.com;www.pinterest.com;i.pinimg.com"),
+            ("Tumblr", "tumblr.com;www.tumblr.com"),
+            ("Dropbox", "dropbox.com;www.dropbox.com;dl.dropboxusercontent.com"),
+            ("Facebook", "facebook.com;www.facebook.com;m.facebook.com;fb.com"),
+        };
+
+        /// <summary>必须走中转的站点（C/D 类，以及被反代按 SNI 路由拒绝的 B 类）。slug 即路径前缀。</summary>
+        static readonly (string Slug, string Name, string Domains)[] RelaySites =
+        {
+            ("bbc-com", "BBC", "bbc.com;www.bbc.com;bbc.co.uk;www.bbc.co.uk"),
+            ("nytimes-com", "纽约时报", "nytimes.com;www.nytimes.com"),
+            ("ft-com", "金融时报", "ft.com;www.ft.com"),
+            ("wsj-com", "华尔街日报", "wsj.com;www.wsj.com"),
+            ("forbes-com", "Forbes", "forbes.com;www.forbes.com"),
+            ("economist-com", "经济学人", "economist.com;www.economist.com"),
+            ("reuters-com", "Reuters", "reuters.com;www.reuters.com"),
+            ("dw-com", "德国之声", "dw.com;www.dw.com"),
+            ("rfi-fr", "法国国际广播", "rfi.fr;www.rfi.fr"),
+            ("voanews-com", "美国之音", "voanews.com;www.voanews.com"),
+            ("washingtonpost-com", "华盛顿邮报", "washingtonpost.com;www.washingtonpost.com"),
+            ("medium-com", "Medium", "medium.com;www.medium.com;miro.medium.com"),
+            ("substack-com", "Substack", "substack.com;www.substack.com"),
+            ("singtao-com", "星岛", "singtao.com;www.singtao.com"),
+            ("udn-com-tw", "联合报", "udn.com.tw;www.udn.com.tw"),
+            ("ok-ru", "OK.ru", "ok.ru;www.ok.ru"),
+            ("gitlab-com", "GitLab", "gitlab.com;www.gitlab.com"),
+            ("stackoverflow-com", "Stack Overflow", "stackoverflow.com;www.stackoverflow.com"),
+            ("archive-org", "Internet Archive", "archive.org;www.archive.org;web.archive.org"),
+            ("reddit-com", "Reddit", "reddit.com;www.reddit.com;old.reddit.com"),
+            ("telegram-org", "Telegram", "telegram.org;web.telegram.org;t.me;telegram.me"),
+            ("discord-com", "Discord", "discord.com;www.discord.com;cdn.discordapp.com;media.discordapp.net"),
+            ("tiktok-com", "TikTok", "tiktok.com;www.tiktok.com"),
+            ("vimeo-com", "Vimeo", "vimeo.com;www.vimeo.com"),
+            ("soundcloud-com", "SoundCloud", "soundcloud.com;www.soundcloud.com"),
+            ("proton-me", "Proton", "proton.me;www.proton.me;mail.proton.me;account.proton.me"),
+            ("signal-org", "Signal", "signal.org;www.signal.org"),
+            ("mega-nz", "MEGA", "mega.nz;www.mega.nz"),
+            ("deviantart-com", "DeviantArt", "deviantart.com;www.deviantart.com"),
+            ("artstation-com", "ArtStation", "artstation.com;www.artstation.com"),
+            ("twitch-tv", "Twitch", "twitch.tv;www.twitch.tv"),
+            ("youtube-com", "YouTube", "youtube.com;www.youtube.com;m.youtube.com;i.ytimg.com;yt3.ggpht.com"),
+            ("google-com", "Google", "google.com;www.google.com;accounts.google.com;apis.google.com;gstatic.com;www.gstatic.com"),
+            ("x-com", "X (Twitter)", "x.com;www.x.com;pbs.twimg.com;abs.twimg.com"),
+            ("twitter-com", "Twitter", "twitter.com;www.twitter.com"),
+            ("instagram-com", "Instagram", "instagram.com;www.instagram.com;i.instagram.com;cdninstagram.com"),
+            ("whatsapp-com", "WhatsApp", "whatsapp.com;www.whatsapp.com;web.whatsapp.com"),
+            ("pixiv", "Pixiv 主站", "pixiv.net;www.pixiv.net;accounts.pixiv.net;source.pixiv.net;sketch.pixiv.net;dic.pixiv.net;comic.pixiv.net;novel.pixiv.net;fanbox.pixiv.net;oauth.secure.pixiv.net"),
+        };
+
+        /// <summary>由名称派生稳定 Guid（勾选状态持久化依赖它，改名等于重置勾选）。</summary>
+        static string NewId(string name)
+        {
+            var bytes = System.Security.Cryptography.MD5.HashData(
+                System.Text.Encoding.UTF8.GetBytes("BD.WTTS.Accelerator." + name));
+            return new Guid(bytes).ToString();
+        }
 
         /// <summary>
         /// 单域名 + 路径前缀的「中转基地址」，例如 <c>https://w.peroe.com</c>。
         /// <para>配好后：访问 <c>https://www.pixiv.net/a</c> 会被改写成 <c>https://w.peroe.com/pixiv/a</c>，
-        /// 由中转端（Cloudflare Worker / nginx / 自写服务）按【路径前缀】分流到真实站点。</para>
-        /// <para>好处：只需要一个域名，不需要为每个站点开子域；Cloudflare Worker 也能用（它按路径匹配，不看 Host）。</para>
-        /// <para>要求：中转端从 <c>/&lt;slug&gt;/...</c> 里剥掉前缀再转发，并把响应原样返回。</para>
-        /// <para>留空表示不启用，Pixiv 主站条目保持「需中转」的占位状态。</para>
+        /// 由中转端按【路径前缀】分流到真实站点。</para>
+        /// <para>留空时，<see cref="RelaySites"/> 里的站点不会出现在列表中（因为它们没有可用的直连路径）。</para>
         /// </summary>
         const string PathPrefixProxyBase = "";
 
@@ -198,9 +260,7 @@ partial class ProxyService
             return Item(name, id, domains, forward, "@domain");
         }
 
-        /// <summary>
-        /// 需要合并进 <see cref="ProxyDomains"/> 的本地加速项目组（顺序即 UI 中的排序）。
-        /// </summary>
+        /// <summary>需要合并进 <see cref="ProxyDomains"/> 的本地加速项目组（顺序即 UI 中的排序）。</summary>
         public static IReadOnlyList<AccelerateProjectGroupDTO> Groups { get; } = CreateGroups();
 
         static IReadOnlyList<AccelerateProjectGroupDTO> CreateGroups()
@@ -216,8 +276,12 @@ partial class ProxyService
 
         /// <summary>
         /// 「其他网站（本地）」分组。
-        /// <para>列在这里的条目：要么被实测证明可「换中性 SNI」直连，要么依赖可用的落地节点；
-        /// Pixiv 主站是唯一必须走中转的（见 <see cref="PathPrefixProxyBase"/>）。</para>
+        /// <list type="number">
+        /// <item>写死节点的条目：Pixiv 图片、维基正文/图片（DoH 解析不到可达节点）；</item>
+        /// <item><see cref="RealSniSites"/>：真实 SNI 即可直连（A 类）；</item>
+        /// <item><see cref="SpoofedSniSites"/>：仅在 SNI 上被封，换中性 SNI + 保留 Host 即可（B 类）；</item>
+        /// <item><see cref="RelaySites"/>：必须中转（C/D 类与按 SNI 路由拒绝的 B 类），需配置 <see cref="PathPrefixProxyBase"/>。</item>
+        /// </list>
         /// </summary>
         static AccelerateProjectGroupDTO CreateOtherSitesGroup()
         {
@@ -225,24 +289,24 @@ partial class ProxyService
             {
                 Item("Pixiv 图片（直连源站）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9101", PixivImageDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
                 Item("DuckDuckGo", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9104", DuckDuckGoDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
-                Item("Proton", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9105", ProtonDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
-                Item("Instagram", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9106", InstagramDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
-                Item("Facebook", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9107", FacebookDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
-                Item("Twitch", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9108", TwitchDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
-                Item("Docker", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9109", DockerDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
-                Item("Dropbox", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910a", DropboxDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
                 Item("OneDrive", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910b", OneDriveDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
                 Item("Amazon 日本", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910c", AmazonJpDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
-                Item("CNN", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910d", CnnDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
-                Item("Bloomberg", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910e", BloombergDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
-                Item("RFI 法国国际广播", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910f", RfiDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
                 Item("维基百科正文（指定节点）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9103", WikipediaDomains, WikipediaIp, NeutralSni, true),
                 Item("维基百科图片（指定节点）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9110", WikipediaImageDomains, WikipediaImageIp, NeutralSni, true),
             };
 
-            // Pixiv 主站只能走中转：配了 PathPrefixProxyBase 就用「单域名 + 路径前缀」，否则留占位条目。
-            items.Add(PathPrefixItem("Pixiv 主站（路径前缀中转）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", PixivDomains, "pixiv")
-                ?? Item("Pixiv 主站（需自建中转：配 PathPrefixProxyBase）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", PixivDomains, ignoreSslCertVerification: true));
+            foreach (var (name, domains) in RealSniSites)
+                items.Add(Item(name, NewId(name), domains, serverName: "@domain"));
+
+            foreach (var (name, domains) in SpoofedSniSites)
+                items.Add(Item(name, NewId(name), domains, serverName: NeutralSni, ignoreSslCertVerification: true));
+
+            foreach (var (slug, name, domains) in RelaySites)
+            {
+                var relayItem = PathPrefixItem(name, NewId(name), domains, slug);
+                if (relayItem != null)
+                    items.Add(relayItem);
+            }
 
             return Group("其他网站（本地）", 9002, items.ToArray());
         }
