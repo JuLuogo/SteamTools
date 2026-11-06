@@ -179,16 +179,40 @@ partial class ProxyService
         const string WikipediaImageDomains = "upload.wikimedia.org;maps.wikimedia.org";
 
         /// <summary>
+        /// 你自己搭的「通用反代」域名，例如 <c>proxy.example.com</c>。填了它，所有需要中转的站点都复用这一个域名，
+        /// 不必为每个站点单独开子域。
+        /// <para>⚠️ 硬性前提：这个反代必须【不按 Host 做站点选择】，即接受任意 <c>Host</c> 头并按其转发
+        /// （nginx 用 <c>server_name _;</c> 的 default_server，或 Caddy/自写 Node、Go 反代）。
+        /// Cloudflare Worker / Vercel / Deno 都做不到——它们按 Hostname 路由，看到外来 Host 直接 403（已实测）。</para>
+        /// <para>留空则 Pixiv 主站条目保持「需自建反代」的占位状态。</para>
+        /// </summary>
+        const string SelfHostedReverseProxyHost = "";
+
+        /// <summary>
         /// 需要合并进 <see cref="ProxyDomains"/> 的本地加速项目组（顺序即 UI 中的排序）。
         /// </summary>
-        public static IReadOnlyList<AccelerateProjectGroupDTO> Groups { get; } = new AccelerateProjectGroupDTO[]
+        public static IReadOnlyList<AccelerateProjectGroupDTO> Groups { get; } = CreateGroups();
+
+        static IReadOnlyList<AccelerateProjectGroupDTO> CreateGroups()
+            => new AccelerateProjectGroupDTO[]
+            {
+                Group("补充加速（本地）", 9001,
+                    Item("GitHub 补充子域名（直连）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9001", GitHubSupplementDomains),
+                    Item("Steam 图片补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9002", SteamImageSupplementDomains, "steamimage.rmbgame.net"),
+                    Item("Steam 静态补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9003", SteamStaticSupplementDomains, "steamstatic.rmbgame.net"),
+                    Item("Steam 下载补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9004", SteamDownloadSupplementDomains, "steammedia.rmbgame.net")),
+                CreateOtherSitesGroup(),
+            };
+
+        /// <summary>
+        /// 「其他网站（本地）」分组。
+        /// <para>列在这里的条目：要么被实测证明可「换中性 SNI」直连，要么依赖可用的落地节点；
+        /// Pixiv 主站是唯一必须走中转的（见 <see cref="SelfHostedReverseProxyHost"/>）。</para>
+        /// </summary>
+        static AccelerateProjectGroupDTO CreateOtherSitesGroup()
         {
-            Group("补充加速（本地）", 9001,
-                Item("GitHub 补充子域名（直连）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9001", GitHubSupplementDomains),
-                Item("Steam 图片补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9002", SteamImageSupplementDomains, "steamimage.rmbgame.net"),
-                Item("Steam 静态补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9003", SteamStaticSupplementDomains, "steamstatic.rmbgame.net"),
-                Item("Steam 下载补充（走镜像）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9004", SteamDownloadSupplementDomains, "steammedia.rmbgame.net")),
-            Group("其他网站（本地）", 9002,
+            var items = new List<AccelerateProjectDTO>
+            {
                 Item("Pixiv 图片（直连源站）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9101", PixivImageDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
                 Item("DuckDuckGo", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9104", DuckDuckGoDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
                 Item("Proton", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9105", ProtonDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
@@ -202,9 +226,16 @@ partial class ProxyService
                 Item("CNN", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910d", CnnDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
                 Item("Bloomberg", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910e", BloombergDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
                 Item("RFI 法国国际广播", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a910f", RfiDomains, serverName: NeutralSni, ignoreSslCertVerification: true),
-                Item("Pixiv 主站（需自建 Worker 反代）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", PixivDomains, ignoreSslCertVerification: true),
                 Item("维基百科正文（指定节点）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9103", WikipediaDomains, WikipediaIp, NeutralSni, true),
-                Item("维基百科图片（指定节点）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9110", WikipediaImageDomains, WikipediaImageIp, NeutralSni, true)),
-        };
+                Item("维基百科图片（指定节点）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9110", WikipediaImageDomains, WikipediaImageIp, NeutralSni, true),
+            };
+
+            // Pixiv 主站：配了通用反代就走反代，否则留一个占位条目说明原因。
+            items.Add(string.IsNullOrEmpty(SelfHostedReverseProxyHost)
+                ? Item("Pixiv 主站（需自建通用反代）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", PixivDomains, ignoreSslCertVerification: true)
+                : Item("Pixiv 主站（走自建反代）", "8f3a1c62-1a1e-4c9b-9d1f-2b6f0f3a9102", PixivDomains, SelfHostedReverseProxyHost, SelfHostedReverseProxyHost, true));
+
+            return Group("其他网站（本地）", 9002, items.ToArray());
+        }
     }
 }

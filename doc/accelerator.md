@@ -544,3 +544,71 @@ bloomberg.com 301 | cnn.com 301
 - 其余站点用「空 `ForwardDomainNames` + 中性 SNI」，由 DoH 解析真实 IP，**不受换 IP 影响**；
 - 官方远端列表仍然优先；本地覆盖层只补缺，不覆盖远端条目；
 - 勾选状态按 Guid 持久化，**改 Guid 等于让老用户重新勾选**。
+
+---
+
+## 13. 用「一个反代域名」承载所有需要中转的站点
+
+### 13.1 结论
+
+**可以，但出口不能是 Cloudflare**。
+
+原因就在数据流上：本项目的反代转发时**只保留原始 `Host`**（`ReverseProxyHttpClientHandler` 里 `request.Headers.Host = uri.Authority`），
+它没有额外的字段去告诉远端「我真正想访问谁」。所以远端必须**接受任意 Host**：
+
+| 出口实现 | 能否一个域名搞定所有站点 | 说明 |
+| --- | --- | --- |
+| VPS + nginx `server_name _;` | ✅ 可以 | 按 `$http_host` 转发，天然支持任意目标 |
+| Caddy / 自写 Node·Go 反代 | ✅ 可以 | 同上，只要不按 Host 做站点选择 |
+| **Cloudflare Worker / Vercel / Deno** | ❌ 不行 | 它们**按 Hostname 路由**；收到 `Host: www.pixiv.net` 但边缘域名是你的 → 直接 403（实测） |
+| Cloudflare 通配子域 `*.p.example.com` | ⚠️ 可以但需要子域 | 一个 DNS 通配 + 一个 Worker 路由即可，但每个站点仍要一个子域 |
+
+### 13.2 nginx 配置（复制即用）
+
+```nginx
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+
+server {
+    listen 443 ssl default_server;   # default_server 很关键：接受任意 Host
+    server_name _;
+
+    # 自签证书就行：客户端侧已开启 IgnoreSSLCertVerification
+    ssl_certificate     /etc/nginx/certs/proxy.crt;
+    ssl_certificate_key /etc/nginx/certs/proxy.key;
+
+    resolver 1.1.1.1 8.8.8.8 valid=300s;
+    resolver_timeout 5s;
+
+    location / {
+        proxy_pass https://$http_host$request_uri;  # 目标 = 原始 Host
+        proxy_ssl_server_name on;                  # 回源使用真实 SNI
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+### 13.3 客户端怎么配（只写一个域名）
+
+在 `ProxyService.LocalAccelerate.cs` 里改一行：
+
+```csharp
+const string SelfHostedReverseProxyHost = "proxy.example.com";
+```
+
+之后：
+- 「Pixiv 主站」条目会自动从占位状态切换成走这个反代；
+- 其它需要中转的站点，加一条 `Item("名字", "稳定Guid", "域名;子域...", SelfHostedReverseProxyHost, SelfHostedReverseProxyHost, true)` 即可，**全部复用同一个域名**；
+- 新增站点仍然需要各自一条条目（因为 hosts 要逐个拦截域名），但你只需要维护**一个**反代地址，不再需要为每个站点开子域。
+
+### 13.4 注意
+
+1. **别做成开放代理**：这个域名能被任何人用来中转 → 建议限制来源 IP、加 Basic Auth，或用随机子域；
+2. **证书**：自签即可（客户端忽略校验），但如果你想让浏览器直连它也正常，就用真证书；
+3. **跳转**：很多站点 `301` 到 `www.` 或别的子域，务必把这些子域也写进条目的域名列表，否则跳转后就没被拦截；
+4. **合规**：自建境外反代属于个人用途，请自行确认所在地法规与目标站点条款。
