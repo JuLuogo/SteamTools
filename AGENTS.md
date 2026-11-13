@@ -72,7 +72,7 @@ Steam++.exe                  net35 的 C# AppHost（src/BD.WTTS.Client.AppHost�
 ```text
 WattToolkit.slnx            # 解决方案入口（slnx 格式）
 Directory.Build.targets     # ⚠️ 在仓库根，不在 src/：Windows 裁剪 -macos TFM、注入 FluentAvaloniaAliases、替换 SteamClient 的 BD.Common
-global.json / NuGet.Config  # SDK 11.0.0（rollForward latestMajor）+ avalonia-nightly feed
+global.json / NuGet.Config  # SDK 11.0.100（rollForward latestMajor，2026-11 上游改为正式版号）+ avalonia-nightly feed
 src/
   BD.WTTS.Client/              # 核心：服务、仓储、设置、ViewModels、插件抽象（TFM: WITH_ALL）
   BD.WTTS.Client.Avalonia/     # Avalonia 视图层：Views、Styles、Converters、Assets（TFM: WITH_DESKTOP）
@@ -101,7 +101,7 @@ doc/                        # file-system.md、publish.md、program-file-structu
 
 ### 4.1 前置
 
-1. **.NET SDK 11.0**（`global.json` 要求 `11.0.0`，`rollForward: latestMajor`、`allowPrerelease: true`）。若 `dotnet --version` 报「A compatible .NET SDK was not found」，先装 SDK，**不要改 `global.json` 迁就本机**。
+1. **.NET SDK 11.0**（`global.json` 要求 `11.0.100`，`rollForward: latestMajor`、`allowPrerelease: true`）。若 `dotnet --version` 报「A compatible .NET SDK was not found」，先装 SDK，**不要改 `global.json` 迁就本机**。
 2. 子模块必须已检出：`git submodule status` 不应出现 `-` 前缀。**除 `git submodule update --init` 外不要做任何子模块写操作**（见 §14）。
 3. 还原需要访问 `https://pkgs.dev.azure.com/AvaloniaUI/...`（`NuGet.Config` 里的 avalonia-nightly feed）。
 
@@ -137,7 +137,7 @@ dotnet build WattToolkit.slnx -c Debug
 
 | 文件 | 作用 |
 | --- | --- |
-| `global.json` | 固定 SDK 11.0.0 |
+| `global.json` | 固定 SDK 11.0.100 |
 | `NuGet.Config` | 只额外加了 avalonia-nightly 源（其余走 nuget.org 默认源） |
 | `src/Directory.Build.props` | `DotNet_Version=11.0`、`Nullable`/`ImplicitUsings`、`IsTrimmable`、CPM 开关；**关闭全部 `GenerateAssembly*Attribute`**（程序集元数据只能在 `src/AssemblyInfo.cs`）；链接 `AssemblyInfo.cs` + `ImplicitUsings.BCL/Common.cs` |
 | `Directory.Build.targets`（仓库根） | ① Windows 上剔除 `-macos`/`-maccatalyst` TFM；② 给 `BD.WTTS.Client.Avalonia` 与插件注入 `FluentAvaloniaAliases.cs`（**排除** `Accelerator.ReverseProxy` 与 `Update`）；③ 把 `ref/SteamClient` 的 `BD.Common` 包引用换成 `ref/Common` 源码引用 |
