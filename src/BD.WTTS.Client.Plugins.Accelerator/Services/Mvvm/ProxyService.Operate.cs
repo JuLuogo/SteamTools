@@ -257,15 +257,20 @@ partial class ProxyService
                         {
                             if (s == null) return default!;
 
-                            return s.ListeningDomainNamesArray.Select(host =>
-                            {
-                                if (host.Contains(' '))
+                            // hosts 文件只认字面域名：通配（含 *）与 /正则 段写进去是无效行，直接跳过。
+                            // 需要覆盖这些子域时应把它们逐个枚举到 ListenDomainNames 里。
+                            return s.ListeningDomainNamesArray
+                                .Where(host => !string.IsNullOrWhiteSpace(host))
+                                .Where(host => host.IndexOf('*') < 0 && host.TrimStart().IndexOf('/') != 0)
+                                .Select(host =>
                                 {
-                                    var h = host.Split(' ');
-                                    return new KeyValuePair<string, string>(h[1], h[0]);
-                                }
-                                return new KeyValuePair<string, string>(host, localhost);
-                            });
+                                    if (host.Contains(' '))
+                                    {
+                                        var h = host.Split(' ');
+                                        return new KeyValuePair<string, string>(h[1], h[0]);
+                                    }
+                                    return new KeyValuePair<string, string>(host, localhost);
+                                });
                         }).ToDictionaryIgnoreRepeat(x => x.Key, y => y.Value);
                         if (isEnableScript)
                         {

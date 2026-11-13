@@ -53,9 +53,41 @@ sealed class ReverseProxyConfig : IReverseProxyConfig
                 var matchDomainNames = item.MatchDomainNames;
                 if (string.IsNullOrWhiteSpace(matchDomainNames))
                     throw new ArgumentNullException(nameof(matchDomainNames));
-                dict.Add(new DomainPattern(matchDomainNames) { Order = item.Order }, item);
+
+                // 加结尾锚：DomainPattern 对普通段只做「^前缀」匹配且没有 $。
+                // 不加锚时 github.com 会误伤 github.community / github.com.xx 这类同前缀域名。
+                dict.Add(new DomainPattern(ToAnchoredDomainPatterns(matchDomainNames)) { Order = item.Order }, item);
             }
         }
+    }
+
+    /// <summary>
+    /// 把「分号分隔的域名列表」转成带结尾锚的正则列表，避免前缀误伤。
+    /// <list type="bullet">
+    /// <item>已是 <c>/</c> 开头的正则段：原样保留；</item>
+    /// <item>普通段：<c>github.com</c> → <c>/^github\.com(:\d+)?(?=/|$)</c>；</item>
+    /// <item>含 <c>*</c> 的段：<c>*.github.io</c> → <c>/^[^.]*\.github\.io(:\d+)?(?=/|$)</c>。</item>
+    /// </list>
+    /// </summary>
+    static string ToAnchoredDomainPatterns(string matchDomainNames)
+    {
+        var segments = matchDomainNames.Split(DomainPattern.GeneralSeparator, StringSplitOptions.RemoveEmptyEntries);
+        var list = new List<string>(segments.Length);
+        foreach (var segment in segments)
+        {
+            var s = segment.Trim();
+            if (s.Length == 0)
+                continue;
+            if (s[0] == '/')
+            {
+                list.Add(s); // 调用方自带正则，原样保留
+                continue;
+            }
+            var pattern = System.Text.RegularExpressions.Regex.Escape(s)
+                .Replace(@"\*", "[^.]*");
+            list.Add("/^" + pattern + @"(:\d+)?(?=/|$)");
+        }
+        return string.Join(DomainPattern.GeneralSeparator.ToString(), list);
     }
 
     void LoadScriptContent(ConcurrentDictionary<int, string> dict, IEnumerable<ScriptIPCDTO>? scripts)

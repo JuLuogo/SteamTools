@@ -853,3 +853,52 @@ net.connect({ host: ip, port: 443, localAddress: "192.168.0.135" })
 
 两条互斥勾选，用户手动切换。优点：零代码风险、失败立刻可见、不产生重复请求。
 当前代码已经能做到——把 `RelaySites` 和 A/B 两表合并成一张表、每条生成两个条目即可。
+
+---
+
+## 17. 上游同步与本次优化（2026-11）
+
+### 17.1 上游同步结果
+
+```text
+本地 develop 领先 27 个提交，上游领先 23 个提交（merge-base: 76b0a5fc2）
+git merge upstream/develop → 零冲突
+```
+
+上游这 23 个提交里和加速器相关的：
+
+| 提交 | 内容 | 对我们的影响 |
+| --- | --- | --- |
+| `788b90335` / `5b0ab6ef3` / `85f8f2c0d` | **未命中加速规则的域名改为隧道透传**，并修正透传规则误判 | 新增 `TunnelPassThroughMiddleware` + `TunnelConnector`：系统代理模式下，**未加速的流量不再做 TLS 中间人，而是直接转发字节流**，解决 Windows 搜索 / Store / Git 因证书无吊销信息被拒的问题 |
+| `20b0309f4` | .NET SDK 11 更新到正式版 | `global.json` 从 `11.0.0` 变成 **`11.0.100`**，之前 CI 里 SDK 装不上的问题根因被上游修掉了 |
+| `11f35fcf3` / `3d855ef20` | Linux 系统代理重构 + IPC 进程校验 | 平台相关，与本主题无关 |
+
+**子模块**：上游推进了 3 个指针（`ref/Common`、`ref/DirectoryPackages`、`ref/SteamClient`），
+这三个新 commit 在自有镜像 `stea-peroe/*` 里**本来就有**，`git submodule update --recursive` 直接成功，无需补推。
+
+### 17.2 本次做的三个优化
+
+| # | 优化 | 位置 | 为什么 |
+| --- | --- | --- | --- |
+| 1 | **域名匹配加结尾锚** | `ReverseProxyConfig.ToAnchoredDomainPatterns` | 原来 `github.com` 会把 `github.community` 也拦下来（前缀匹配无 `$`）。现在转成 `/^github\.com(:\d+)?(?=/|$)/`，同时兼容带端口与路径 |
+| 2 | **hosts 写入过滤通配/正则** | `ProxyService.Operate.cs` | hosts 文件只认字面域名，`*.github.io` 这类写进去是无效行。现在跳过含 `*` 或 `/` 开头的段 |
+| 3 | **站点表补全为完整子域名** | `ProxyService.LocalAccelerate.cs` | 原来只写了主域，页面里的 CDN/静态资源（如 `i.guim.co.uk`、`static01.nyt.com`、`pbs.twimg.com`）没被拦截，导致「能开首页但图片/样式全裂」 |
+
+补全后三张表共 **134 条域名规则**，典型例子：
+
+```text
+BBC        → ichef.bbci.co.uk / static.bbci.co.uk / nav.files.bbci.co.uk / bbcmedia.akamai.net …
+纽约时报    → static01.nyt.com / g1.nyt.com / graphics8.nytimes.com …
+X (Twitter) → pbs.twimg.com / abs.twimg.com / video.twimg.com / t.co …
+YouTube    → i.ytimg.com / yt3.ggpht.com / youtubei.googleapis.com …
+```
+
+> ⚠️ 站点名保持不变，因此 `NewId(名称)` 派生的 Guid 不变，**老用户的勾选状态不会丢**。
+
+### 17.3 还没做的（原因）
+
+| 项 | 状态 | 原因 |
+| --- | --- | --- |
+| 请求级「直连失败自动回落中转」 | 未做 | 需要全局配置 + POST 体缓存 + 失败判定，见 §16.4；建议先用「条目级双选」 |
+| 条目级双选 | 未做 | 需要把三张表合并成「每站两条」，改动小但涉及 UI 去重 |
+| 本地覆盖层外部化（JSON 可配置） | 未做 | 改动面大，且要先加设置项与校验 |
