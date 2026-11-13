@@ -72,12 +72,19 @@ sealed class ReverseProxyHttpClientHandler : DelegatingHandler
 
     /// <summary>
     /// 把原始请求路径拼到中转地址的路径前缀后面。
-    /// <para>例：<c>https://w.peroe.com/pixiv</c> + <c>https://www.pixiv.net/ranking.php?mode=daily</c>
-    /// → <c>https://w.peroe.com/pixiv/ranking.php?mode=daily</c></para>
+    /// <list type="number">
+    /// <item>基地址<b>带路径</b>（<c>https://w.example.com/pixiv</c>）→ 固定前缀模式：
+    /// <c>https://w.example.com/pixiv/ranking.php?mode=daily</c>；</item>
+    /// <item>基地址<b>无路径</b>（<c>https://w.example.com</c>）→ 主机名编入模式：
+    /// <c>https://w.example.com/www.pixiv.net/ranking.php?mode=daily</c>。
+    /// 中转端从第一段路径取出目标主机，无需为每个站点单独配规则。</item>
+    /// </list>
     /// </summary>
     static Uri BuildPathPrefixedUri(Uri original, Uri pathPrefixBase)
     {
-        var prefix = pathPrefixBase.AbsolutePath.TrimEnd('/');
+        var basePath = pathPrefixBase.AbsolutePath.TrimEnd('/');
+        // 基地址没有路径时，把原始主机名编进第一段路径
+        var prefix = string.IsNullOrEmpty(basePath) ? "/" + original.Host : basePath;
         var builder = new UriBuilder(original)
         {
             Scheme = pathPrefixBase.Scheme,

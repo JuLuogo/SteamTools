@@ -162,7 +162,6 @@ partial class ProxyService
             ("NPR", "npr.org"),
             ("Ameba 博客", "ameblo.jp"),
             ("Naver", "naver.com"),
-            ("GitHub", "github.com"),
             ("Docker", "docker.com"),
             ("npm", "npmjs.com"),
             ("PyPI", "pypi.org"),
@@ -191,47 +190,47 @@ partial class ProxyService
             ("Facebook", "facebook.com;www.facebook.com;m.facebook.com;fb.com"),
         };
 
-        /// <summary>必须走中转的站点（C/D 类，以及被反代按 SNI 路由拒绝的 B 类）。slug 即路径前缀。</summary>
-        static readonly (string Slug, string Name, string Domains)[] RelaySites =
+        /// <summary>必须走中转的站点（C/D 类，以及被反代按 SNI 路由拒绝的 B 类）。目标主机名会由反代编进路径。</summary>
+        static readonly (string Name, string Domains)[] RelaySites =
         {
-            ("bbc-com", "BBC", "bbc.com;www.bbc.com;bbc.co.uk;www.bbc.co.uk"),
-            ("nytimes-com", "纽约时报", "nytimes.com;www.nytimes.com"),
-            ("ft-com", "金融时报", "ft.com;www.ft.com"),
-            ("wsj-com", "华尔街日报", "wsj.com;www.wsj.com"),
-            ("forbes-com", "Forbes", "forbes.com;www.forbes.com"),
-            ("economist-com", "经济学人", "economist.com;www.economist.com"),
-            ("reuters-com", "Reuters", "reuters.com;www.reuters.com"),
-            ("dw-com", "德国之声", "dw.com;www.dw.com"),
-            ("rfi-fr", "法国国际广播", "rfi.fr;www.rfi.fr"),
-            ("voanews-com", "美国之音", "voanews.com;www.voanews.com"),
-            ("washingtonpost-com", "华盛顿邮报", "washingtonpost.com;www.washingtonpost.com"),
-            ("medium-com", "Medium", "medium.com;www.medium.com;miro.medium.com"),
-            ("substack-com", "Substack", "substack.com;www.substack.com"),
-            ("singtao-com", "星岛", "singtao.com;www.singtao.com"),
-            ("udn-com-tw", "联合报", "udn.com.tw;www.udn.com.tw"),
-            ("ok-ru", "OK.ru", "ok.ru;www.ok.ru"),
-            ("gitlab-com", "GitLab", "gitlab.com;www.gitlab.com"),
-            ("stackoverflow-com", "Stack Overflow", "stackoverflow.com;www.stackoverflow.com"),
-            ("archive-org", "Internet Archive", "archive.org;www.archive.org;web.archive.org"),
-            ("reddit-com", "Reddit", "reddit.com;www.reddit.com;old.reddit.com"),
-            ("telegram-org", "Telegram", "telegram.org;web.telegram.org;t.me;telegram.me"),
-            ("discord-com", "Discord", "discord.com;www.discord.com;cdn.discordapp.com;media.discordapp.net"),
-            ("tiktok-com", "TikTok", "tiktok.com;www.tiktok.com"),
-            ("vimeo-com", "Vimeo", "vimeo.com;www.vimeo.com"),
-            ("soundcloud-com", "SoundCloud", "soundcloud.com;www.soundcloud.com"),
-            ("proton-me", "Proton", "proton.me;www.proton.me;mail.proton.me;account.proton.me"),
-            ("signal-org", "Signal", "signal.org;www.signal.org"),
-            ("mega-nz", "MEGA", "mega.nz;www.mega.nz"),
-            ("deviantart-com", "DeviantArt", "deviantart.com;www.deviantart.com"),
-            ("artstation-com", "ArtStation", "artstation.com;www.artstation.com"),
-            ("twitch-tv", "Twitch", "twitch.tv;www.twitch.tv"),
-            ("youtube-com", "YouTube", "youtube.com;www.youtube.com;m.youtube.com;i.ytimg.com;yt3.ggpht.com"),
-            ("google-com", "Google", "google.com;www.google.com;accounts.google.com;apis.google.com;gstatic.com;www.gstatic.com"),
-            ("x-com", "X (Twitter)", "x.com;www.x.com;pbs.twimg.com;abs.twimg.com"),
-            ("twitter-com", "Twitter", "twitter.com;www.twitter.com"),
-            ("instagram-com", "Instagram", "instagram.com;www.instagram.com;i.instagram.com;cdninstagram.com"),
-            ("whatsapp-com", "WhatsApp", "whatsapp.com;www.whatsapp.com;web.whatsapp.com"),
-            ("pixiv", "Pixiv 主站", "pixiv.net;www.pixiv.net;accounts.pixiv.net;source.pixiv.net;sketch.pixiv.net;dic.pixiv.net;comic.pixiv.net;novel.pixiv.net;fanbox.pixiv.net;oauth.secure.pixiv.net"),
+            ("BBC", "bbc.com;www.bbc.com;bbc.co.uk;www.bbc.co.uk"),
+            ("纽约时报", "nytimes.com;www.nytimes.com"),
+            ("金融时报", "ft.com;www.ft.com"),
+            ("华尔街日报", "wsj.com;www.wsj.com"),
+            ("Forbes", "forbes.com;www.forbes.com"),
+            ("经济学人", "economist.com;www.economist.com"),
+            ("Reuters", "reuters.com;www.reuters.com"),
+            ("德国之声", "dw.com;www.dw.com"),
+            ("法国国际广播", "rfi.fr;www.rfi.fr"),
+            ("美国之音", "voanews.com;www.voanews.com"),
+            ("华盛顿邮报", "washingtonpost.com;www.washingtonpost.com"),
+            ("Medium", "medium.com;www.medium.com;miro.medium.com"),
+            ("Substack", "substack.com;www.substack.com"),
+            ("星岛", "singtao.com;www.singtao.com"),
+            ("联合报", "udn.com.tw;www.udn.com.tw"),
+            ("OK.ru", "ok.ru;www.ok.ru"),
+            ("GitLab", "gitlab.com;www.gitlab.com"),
+            ("Stack Overflow", "stackoverflow.com;www.stackoverflow.com"),
+            ("Internet Archive", "archive.org;www.archive.org;web.archive.org"),
+            ("Reddit", "reddit.com;www.reddit.com;old.reddit.com"),
+            ("Telegram", "telegram.org;web.telegram.org;t.me;telegram.me"),
+            ("Discord", "discord.com;www.discord.com;cdn.discordapp.com;media.discordapp.net"),
+            ("TikTok", "tiktok.com;www.tiktok.com"),
+            ("Vimeo", "vimeo.com;www.vimeo.com"),
+            ("SoundCloud", "soundcloud.com;www.soundcloud.com"),
+            ("Proton", "proton.me;www.proton.me;mail.proton.me;account.proton.me"),
+            ("Signal", "signal.org;www.signal.org"),
+            ("MEGA", "mega.nz;www.mega.nz"),
+            ("DeviantArt", "deviantart.com;www.deviantart.com"),
+            ("ArtStation", "artstation.com;www.artstation.com"),
+            ("Twitch", "twitch.tv;www.twitch.tv"),
+            ("YouTube", "youtube.com;www.youtube.com;m.youtube.com;i.ytimg.com;yt3.ggpht.com"),
+            ("Google", "google.com;www.google.com;accounts.google.com;apis.google.com;gstatic.com;www.gstatic.com"),
+            ("X (Twitter)", "x.com;www.x.com;pbs.twimg.com;abs.twimg.com"),
+            ("Twitter", "twitter.com;www.twitter.com"),
+            ("Instagram", "instagram.com;www.instagram.com;i.instagram.com;cdninstagram.com"),
+            ("WhatsApp", "whatsapp.com;www.whatsapp.com;web.whatsapp.com"),
+            ("Pixiv 主站", "pixiv.net;www.pixiv.net;accounts.pixiv.net;source.pixiv.net;sketch.pixiv.net;dic.pixiv.net;comic.pixiv.net;novel.pixiv.net;fanbox.pixiv.net;oauth.secure.pixiv.net"),
         };
 
         /// <summary>由名称派生稳定 Guid（勾选状态持久化依赖它，改名等于重置勾选）。</summary>
@@ -244,20 +243,23 @@ partial class ProxyService
 
         /// <summary>
         /// 单域名 + 路径前缀的「中转基地址」，例如 <c>https://w.peroe.com</c>。
-        /// <para>配好后：访问 <c>https://www.pixiv.net/a</c> 会被改写成 <c>https://w.peroe.com/pixiv/a</c>，
+        /// <para>配好后：访问 <c>https://www.pixiv.net/a</c> 会被改写成 <c>https://w.peroe.com/www.pixiv.net/a</c>，
         /// 由中转端按【路径前缀】分流到真实站点。</para>
         /// <para>留空时，<see cref="RelaySites"/> 里的站点不会出现在列表中（因为它们没有可用的直连路径）。</para>
         /// </summary>
         const string PathPrefixProxyBase = "";
 
-        /// <summary>创建一个走「路径前缀中转」的条目；未配置基地址时返回 null。</summary>
-        static AccelerateProjectDTO? PathPrefixItem(string name, string id, string domains, string slug)
+        /// <summary>
+        /// 创建一个走「路径前缀中转」的条目；未配置基地址时返回 null。
+        /// <para>转发目标只写基地址（不带路径），反代会自动把原始主机名编进第一段路径，
+        /// 因此中转端不需要为每个站点配规则。</para>
+        /// </summary>
+        static AccelerateProjectDTO? PathPrefixItem(string name, string id, string domains)
         {
             if (string.IsNullOrEmpty(PathPrefixProxyBase))
                 return null;
-            var forward = PathPrefixProxyBase.TrimEnd('/') + "/" + slug;
             // serverName 用 @domain：改写后的 uri.Host 就是中转域名，SNI 自然等于它
-            return Item(name, id, domains, forward, "@domain");
+            return Item(name, id, domains, PathPrefixProxyBase.TrimEnd('/'), "@domain");
         }
 
         /// <summary>需要合并进 <see cref="ProxyDomains"/> 的本地加速项目组（顺序即 UI 中的排序）。</summary>
@@ -301,9 +303,9 @@ partial class ProxyService
             foreach (var (name, domains) in SpoofedSniSites)
                 items.Add(Item(name, NewId(name), domains, serverName: NeutralSni, ignoreSslCertVerification: true));
 
-            foreach (var (slug, name, domains) in RelaySites)
+            foreach (var (name, domains) in RelaySites)
             {
-                var relayItem = PathPrefixItem(name, NewId(name), domains, slug);
+                var relayItem = PathPrefixItem(name, NewId(name), domains);
                 if (relayItem != null)
                     items.Add(relayItem);
             }

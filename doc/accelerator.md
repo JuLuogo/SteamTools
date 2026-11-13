@@ -661,44 +661,54 @@ Item("Pixiv 主站（路径前缀中转）", "稳定Guid", PixivDomains,
 
 其它站点同理，加一句 `PathPrefixItem("名字", "Guid", "域名列表", "slug")` 即可，**共用同一个域名**。
 
-### 14.3 Cloudflare Worker（按路径前缀分流）
+### 14.3 Cloudflare Worker（按「路径第一段 = 目标主机」分流）
 
 ```js
-// 路径前缀 → 目标站点；一个域名承载全部
-const ROUTES = {
-  pixiv:      "www.pixiv.net",
-  pixivimg:   "i.pximg.net",
-  wikipedia:  "zh.wikipedia.org",
-};
+// 请求形如 https://w.peroe.com/www.pixiv.net/ranking.php?mode=daily
+//                ↓ 第一段路径就是目标主机
+// 转发到 https://www.pixiv.net/ranking.php?mode=daily
+
+const ALLOW = [
+  "pixiv.net", "pximg.net", "wikipedia.org", "wikimedia.org",
+  "bbc.com", "nytimes.com", "youtube.com", "google.com", "reddit.com",
+  // ... 与客户端 RelaySites 保持一致
+];
+
+const allow = (host) => ALLOW.some(d => host === d || host.endsWith("." + d));
 
 export default {
   async fetch(request) {
     const url = new URL(request.url);
-    const m = url.pathname.match(/^\/([a-z0-9_-]+)(\/.*)?$/i);
-    if (!m) return new Response("bad path", { status: 400 });
-
-    const target = ROUTES[m[1].toLowerCase()];
-    if (!target) return new Response("route not allowed", { status: 403 });
+    const seg = url.pathname.split("/").filter(Boolean);
+    const target = seg.shift();
+    if (!target || !allow(target)) return new Response("forbidden", { status: 403 });
 
     const upstream = new URL(request.url);
     upstream.protocol = "https:";
     upstream.hostname = target;
-    upstream.pathname = m[2] || "/";          // 剥掉前缀
+    upstream.pathname = "/" + seg.join("/");
 
     const headers = new Headers(request.headers);
     headers.delete("host");
-    headers.set("Referer", "https://" + target + "/");  // 有些站点（如 pximg）校验来源
+    if (!headers.has("referer")) headers.set("referer", "https://" + target + "/");
 
-    return fetch(upstream.toString(), {
+    const resp = await fetch(upstream.toString(), {
       method: request.method,
       headers,
       body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
-      redirect: "manual",   // 跳转原样回给浏览器，再由本地反代拦截
+      redirect: "manual",
     });
-  }
+
+    // 关键：去掉与压缩/长度相关的头，避免浏览器解压失败
+    const out = new Headers(resp.headers);
+    out.delete("content-encoding");
+    out.delete("content-length");
+    return new Response(resp.body, { status: resp.status, headers: out });
+  },
 };
 ```
 
+> **不需要为每个站点在 Worker 里写死映射**：第一段路径就是主机名，`ALLOW` 只做「别变成开放代理」的白名单。
 ### 14.4 与子域编码方案的对比
 
 | 方案 | 域名数量 | 证书 | 每个站点新增成本 |
@@ -762,3 +772,84 @@ net.connect({ host: ip, port: 443, localAddress: "192.168.0.135" })
 1. 只想要直连的：勾选「其他网站（本地）」里 A/B 两类条目即可（无需任何服务端）；
 2. 想连央视/推/YTB/Pixiv 这些：把 `PathPrefixProxyBase` 填成你的中转域名，重启后 `RelaySites` 会自动变成可勾选条目；
 3. 条目 Id 由 `NewId(名称)` 稳定派生，**改名会重置勾选状态**。
+
+---
+
+## 16. 方案体检、速度与兜底（2026-11 复核）
+
+### 16.1 已验证成立的部分
+
+| 结论 | 证据 |
+| --- | --- |
+| hosts/驱动劫持 + 本地 TLS 中间人 + 出站转发，链路完整 | 线上列表、`Steam++.Accelerator` 子进程、Kestrel 中间件均已实测可用 |
+| 「换中性 SNI + 保留 Host」对按 Host 路由的站点有效 | 20/40 站点实测 200，另 20 个 403（CF 按 SNI 路由） |
+| 「指定落地节点」对 DoH 解析不到的站点有效 | 维基正文 `185.15.58.224` 3/4 成功；Pixiv 图片 `210.140.139.130` 200 |
+| 路径前缀改写（本次新增） | 代码已合并；URI 改写逻辑在 `SendAsync`，连接阶段跳过原域名解析 |
+
+### 16.2 尚存的风险点（按严重度）
+
+| # | 风险 | 影响 | 建议 |
+| --- | --- | --- | --- |
+| 1 | **Hosts 模式无法表达通配** | `*.github.com` 之类只能枚举，漏一个就断 | 想全覆盖就切 System/PAC 模式，并用 `/` 开头的正则 |
+| 2 | **域名匹配是前缀匹配且无 `$` 锚** | `github.com` 会误伤 `github.community` | 关键条目改用 `/^github\.com$/` 形式 |
+| 3 | **DoH 解析结果会变** | 指定节点的条目不跟 CDN 调整 | 已把「不写死 IP」作为默认（A/B 类），只对必要站点写死 |
+| 4 | **Cloudflare Worker 不转发 WebSocket** | 依赖 WS 的站点（部分直播/协作站点）不可用 | 这类站点走 VPS nginx 或保留代理 |
+| 5 | **Worker 免费额度 10 万请求/天** | 一个图多的页面就能吃掉几千 | 图片类走直连节点（本项目已这样做），不要全量套 Worker |
+| 6 | **路径前缀会破坏部分站点** | 站点若根据 `Location`/`Referer` 判断同源，可能异常 | 优先直连；中转只作为兜底 |
+| 7 | **证书**：伪装 SNI 时必须忽略校验 | 降低安全性（仅对反代内部链路） | 中转域名用真证书时关闭忽略 |
+
+### 16.3 速度：能不能用「优选 IP」保证
+
+链路分两段，瓶颈不同：
+
+```text
+本地 ──①──> CF 边缘 ──②──> 目标站点
+```
+
+| 段 | 影响因素 | 优选 IP 是否有用 |
+| --- | --- | --- |
+| ① 本地→CF | 出口线路、CF anycast 质量 | ✅ 有用。不过是**连接目标**的优选，不是 URL 的优选 |
+| ② CF→目标 | CF 机房出口、目标站点回源 | ❌ 无关 |
+
+**结论**：优选 IP 只能改善第 ① 段，且**不能靠改 URL 实现**——因为路径前缀模式下 `Host` 必须等于中转域名（改成 IP 会被 CF 403）。
+要真正吃上优选 IP，只有两条路：
+1. 让 `w.example.com` 在**解析层**指向优选 IP（本地 DNS / 路由器 hosts / 自建 DoH），本项目内置 DoH 会绕过系统 hosts，需要给它加「指定解析」能力；
+2. 直接用 **VPS + nginx**（自选机房、自选线路），不经过 CF 边缘。
+
+实测参考：`i.pixiv.re`、`pixiv.re` 这类公共 CF 反代在同一条线路上延迟与直连 CF anycast 接近，说明 CF anycast 本身通常已是最优，**优选 IP 的收益有限**。
+
+### 16.4 兜底机制：直连优先、失败回落中转（可行，未实现）
+
+设计：
+
+```text
+请求 www.bbc.com/page
+  ↓ 先按 A/B 类直连（DoH + 真实/中性 SNI）
+  ├─ 成功 → 直接返回
+  └─ 失败（连接超时 / TLS 重置 / 5xx）→ 用同一路径前缀机制重试一次：
+        https://w.example.com/www.bbc.com/page
+```
+
+实现要点（改动量评估）：
+
+| 点 | 说明 |
+| --- | --- |
+| 位置 | `ReverseProxyHttpClientHandler.SendAsync`：`try { base.SendAsync } catch { 若配置了兜底基地址 → 克隆请求、改写 URI、重试一次 }` |
+| 请求克隆 | 需要缓存 `HttpContent`（`request.Content.ReadAsByteArrayAsync`），否则 POST 体只能发一次 |
+| 配置来源 | 需要一个**全局**的兜底基地址；当前 `ForwardDomainNames` 是逐条目的，建议加到 `ReverseProxyConfig`（src 项目，可改） |
+| 开关 | 建议放在 `ProxySettings`（源生成侧只能改 `*.BaseType.cs`）+ 设置页开关 |
+| 风险 | 失败判定不易做准（5xx 不该触发兜底、GET 超时可、POST 不可重试） |
+
+**判断**：技术上完全可行，但要处理「哪些失败可重试」「POST 不能重放」「超时预算翻倍」三个细节，属于半天到一天的工作量。
+
+### 16.5 更划算的替代兜底（推荐先做这个）
+
+与其做请求级兜底，不如做**条目级双选**：
+
+```text
+「BBC」条目：直连模式（默认）
+「BBC（中转）」条目：路径前缀模式
+```
+
+两条互斥勾选，用户手动切换。优点：零代码风险、失败立刻可见、不产生重复请求。
+当前代码已经能做到——把 `RelaySites` 和 A/B 两表合并成一张表、每条生成两个条目即可。
